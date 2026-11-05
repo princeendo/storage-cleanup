@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from storage_cleanup.scan.model import Scan, scan_from_json
+from storage_cleanup.scan.model import JsonValue, Scan, scan_from_json
 from storage_cleanup.web.views import build_view
 
 TOKEN_COOKIE: Final = "sc_token"
@@ -41,13 +41,29 @@ def static_dir() -> Path:
     return Path(str(files("storage_cleanup.web") / "static"))
 
 
-def load_scan(path: Path) -> Scan:
-    """Read a scan file, or raise ValueError with a message a person can act on."""
+def _read_scan(path: Path) -> Scan:
     try:
         return scan_from_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except Exception as exc:  # any malformed file must become a readable message
         reason = exc.strerror if isinstance(exc, OSError) and exc.strerror else exc
         raise ValueError(f"Cannot read scan {path}: {reason}") from exc
+
+
+def load_view(path: Path, now: float) -> dict[str, JsonValue]:
+    """Read a scan and build the page data, or raise a readable ValueError."""
+    scan = _read_scan(path)
+    try:
+        return build_view(scan, now)
+    except Exception as exc:
+        raise ValueError(
+            f"Cannot read scan {path}: the page cannot draw it ({exc!r})"
+        ) from exc
+
+
+def load_scan(path: Path) -> Scan:
+    """Read a scan the page can draw, or raise ValueError with a readable message."""
+    load_view(path, time.time())
+    return _read_scan(path)
 
 
 class ScanServer(ThreadingHTTPServer):
@@ -163,11 +179,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _view(self) -> None:
         try:
-            scan = load_scan(self.app.scan_path)
+            view = load_view(self.app.scan_path, time.time())
         except ValueError as exc:
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc).encode())
             return
-        body = json.dumps(build_view(scan, time.time()), ensure_ascii=True).encode()
+        body = json.dumps(view, ensure_ascii=True).encode()
         self._send(
             HTTPStatus.OK,
             body,

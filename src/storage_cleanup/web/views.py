@@ -99,6 +99,7 @@ def _groups(
 ) -> dict[str, str]:
     by_id = {i.id: i for i in items}
     memo: dict[str, str] = {}
+    visiting: set[str] = set()
 
     def group(item: Item) -> str:
         if item.id in memo:
@@ -107,7 +108,11 @@ def _groups(
         result: str
         if inherits(mine):
             parent = by_id.get(item.parent_id) if item.parent_id else None
+            if parent is not None and parent.id in visiting | {item.id}:
+                parent = None  # a broken scan with a parent cycle
+            visiting.add(item.id)
             result = group(parent) if parent is not None else (mine or fallback(item))
+            visiting.discard(item.id)
         else:
             assert mine is not None
             result = mine
@@ -134,7 +139,10 @@ def _group_small(node: TreeNode, small_min_bytes: int) -> None:
     threshold = max(small_min_bytes, SMALL_FRACTION * node.value)
     small = [c for c in node.children if c.value < threshold and c.kind != "system"]
     if len(small) >= 2:
-        kept = [c for c in node.children if c not in small and c.kind != "system"]
+        small_ids = {id(c) for c in small}
+        kept = [
+            c for c in node.children if id(c) not in small_ids and c.kind != "system"
+        ]
         kept.append(
             TreeNode(
                 id=f"smaller:{node.id}",
@@ -164,7 +172,9 @@ def _partition(
     def node(item: Item) -> TreeNode:
         g = groups[item.id]
         same = [node(c) for c in kids.get(item.id, []) if groups[c.id] == g]
-        value = exclusive[item.id] + sum(c.value for c in same)
+        # Tool-reported children (Docker images share layers) can add up to more
+        # than their parent; never let a subtree claim more than was measured.
+        value = min(item.size_bytes, exclusive[item.id] + sum(c.value for c in same))
         children = sorted(same, key=lambda n: n.value, reverse=True)
         if same and exclusive[item.id] > 0:
             children.append(

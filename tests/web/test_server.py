@@ -162,7 +162,15 @@ def test_api_rereads_scan_file(server: ThreadingHTTPServer, scan_file: Path) -> 
 
 
 @pytest.mark.parametrize(
-    "content", ["not json", '{"schema_version": 2}', '{"schema_version": 1}']
+    "content",
+    [
+        "not json",
+        "[]",
+        "null",
+        '{"schema_version": 2}',
+        '{"schema_version": 1}',
+        "[" * 100_000 + "]" * 100_000,
+    ],
 )
 def test_load_scan_rejects_bad_files(tmp_path: Path, content: str) -> None:
     path = tmp_path / "bad.json"
@@ -205,3 +213,25 @@ def test_cookie_name_is_per_port(server: ThreadingHTTPServer) -> None:
     port = server.server_address[1]
     resp = request(server, f"/?token={TOKEN}", cookie=None)
     assert (resp.getheader("Set-Cookie") or "").startswith(f"{TOKEN_COOKIE}_{port}=")
+
+
+def broken_scan_text() -> str:
+    data = json.loads(scan_to_json(scan_of([path_item("/h/Movies", 100)])))
+    data["items"][0]["size_bytes"] = "5"
+    return json.dumps(data)
+
+
+def test_load_scan_rejects_scans_the_page_cannot_draw(tmp_path: Path) -> None:
+    path = tmp_path / "typed-wrong.json"
+    path.write_text(broken_scan_text())
+    with pytest.raises(ValueError, match=re.escape(str(path))):
+        load_scan(path)
+
+
+def test_api_view_answers_500_with_message(
+    server: ThreadingHTTPServer, scan_file: Path
+) -> None:
+    scan_file.write_text(broken_scan_text())
+    resp = request(server, "/api/view")
+    assert resp.status == 500
+    assert b"Cannot read scan" in resp.read()

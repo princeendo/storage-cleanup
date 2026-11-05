@@ -327,3 +327,49 @@ def test_small_top_level_groups_are_grouped() -> None:
     assert ("smaller", "5 smaller items") in kinds
     assert kinds[-1][0] == "system"
     assert sum(c.value for c in tree.children) == 200 * GIB
+
+
+def test_grouping_many_children_is_fast() -> None:
+    import time
+
+    folder = path_item("/h/Downloads", 20_000 * 1024)
+    files = [path_item(f"/h/Downloads/f{i}", 1024, kind="file") for i in range(20_000)]
+    scan = scan_of([folder, *files], used=1024**4)
+    start = time.perf_counter()
+    category_tree(scan)
+    location_tree(scan)
+    assert time.perf_counter() - start < 3
+
+
+def test_children_reported_bigger_than_parent_are_capped() -> None:
+    total = replace(
+        path_item("/x", 10, ("docker",), kind="docker-total"),
+        id=item_id("docker-total", "docker"),
+        path=None,
+        size_source=SizeSource.TOOL_REPORTED,
+    )
+    images = [
+        replace(
+            path_item(f"/img{i}", 8, ("docker",), kind="docker-image"),
+            path=None,
+            parent_id=total.id,
+            size_source=SizeSource.TOOL_REPORTED,
+        )
+        for i in range(3)
+    ]
+    tree = category_tree(scan_of([total, *images], used=100), small_min_bytes=0)
+    values = {c.group: c.value for c in tree.children}
+    assert values == {"docker": 10, "system-other": 90}
+
+
+def test_parent_cycles_do_not_crash() -> None:
+    a = path_item("/h/A", 5)
+    b = path_item("/h/B", 5)
+    a = replace(a, parent_id=b.id)
+    b = replace(b, parent_id=a.id)
+    selfish = replace(path_item("/h/C", 5), parent_id=item_id("folder", "/h/C"))
+    scan = scan_of([], used=100)
+    scan = replace(scan, items=(a, b, selfish))
+    tree = category_tree(scan)
+    assert all(n.value >= 0 for n in all_nodes(tree))
+    assert build_view(scan, NOW)["schema"] == 1
