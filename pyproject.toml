@@ -27,6 +27,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py312"
+extend-exclude = ["docs", ".superpowers"]
 line-length = 88
 
 [tool.ruff.lint]
