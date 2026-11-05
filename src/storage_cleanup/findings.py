@@ -20,6 +20,7 @@ MAX_HEADLINES: Final = 8
 MAX_TITLE: Final = 80
 MAX_BODY: Final = 300
 MAX_REASON: Final = 200
+MIN_CONFIDENCE: Final = 0.5
 _CATEGORY_ID: Final = re.compile(r"^[a-z0-9-]{1,40}$")
 _RESERVED_CATEGORY_IDS: Final = frozenset({*DISPLAY_NAMES, "system-other"})
 
@@ -125,11 +126,12 @@ def parse_findings(text: str) -> Findings:
 
 
 def _is_confidence(value: object) -> bool:
+    # Range first: comparing a huge int is safe, math.isfinite(10**400) is not.
     return (
         isinstance(value, int | float)
         and not isinstance(value, bool)
-        and math.isfinite(value)
         and 0 <= value <= 1
+        and math.isfinite(value)
     )
 
 
@@ -196,9 +198,17 @@ def validate_findings(findings: Findings, scan: Scan, scan_name: str) -> list[st
                 f"{', '.join(sorted(ACTIONS))}, not {rec.action!r}."
             )
         if not _is_confidence(rec.confidence):
+            shown = repr(rec.confidence)
+            shown = shown if len(shown) <= 40 else shown[:37] + "..."
             problems.append(
                 f"Item {rec.item_id}: confidence must be a number from 0 to 1, "
-                f"not {rec.confidence!r}."
+                f"not {shown}."
+            )
+        elif rec.confidence < MIN_CONFIDENCE:
+            problems.append(
+                f"Item {rec.item_id}: confidence below {MIN_CONFIDENCE} is not a "
+                "recommendation (AGENT_PLAYBOOK.md step 5); mention it in a "
+                "headline instead."
             )
         if not rec.reason.strip() or len(rec.reason) > MAX_REASON:
             problems.append(

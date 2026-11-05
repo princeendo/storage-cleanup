@@ -64,13 +64,27 @@ def _load_findings(
     """Valid findings for this scan, or None with a sentence saying why not."""
     path = findings_path or findings_path_for(scan_path)
     if findings_path is None and not path.exists():
+        older = (
+            sorted(p.name for p in path.parent.glob("*.json"))
+            if path.parent.is_dir()
+            else []
+        )
+        if older:
+            when = "an older" if older[-1] < scan_path.name else "another"
+            return None, (
+                f"Agent findings are for {when} scan ({older[-1]}). Ask your agent "
+                "to run AGENT_PLAYBOOK.md again for this scan."
+            )
         return None, None
     try:
         findings = parse_findings(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         reason = exc.strerror if isinstance(exc, OSError) and exc.strerror else exc
         return None, f"Agent findings were not shown: {reason}"
-    problems = validate_findings(findings, scan, scan_path.name)
+    try:
+        problems = validate_findings(findings, scan, scan_path.name)
+    except Exception as exc:  # broken findings must only ever add a note
+        return None, f"Agent findings were not shown: {exc!r}"
     if not problems:
         return findings, None
     shown = " ".join(problems[:MAX_NOTED_PROBLEMS])

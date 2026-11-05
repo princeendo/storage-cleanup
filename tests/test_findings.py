@@ -115,6 +115,8 @@ def rec(**overrides: Any) -> dict[str, Any]:
         ({"recommendations": [rec(action="shred")]}, "action"),
         ({"recommendations": [rec(confidence=1.5)]}, "confidence"),
         ({"recommendations": [rec(confidence="high")]}, "confidence"),
+        ({"recommendations": [rec(confidence=10**400)]}, "confidence"),
+        ({"recommendations": [rec(confidence=0.2)]}, "below 0.5"),
         ({"recommendations": [rec(reason="  ")]}, "reason"),
         ({"recommendations": [rec(reason="x" * 201)]}, "reason"),
         ({"headlines": [{"title": "t" * 81, "body": "b", "item_ids": []}]}, "title"),

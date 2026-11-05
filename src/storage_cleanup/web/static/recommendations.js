@@ -86,6 +86,8 @@ function rowFor(row, view, onSelect, depth) {
     });
   tr.addEventListener("click", open);
   tr.addEventListener("keydown", (event) => {
+    // Keys on the expand button belong to the button, not the row.
+    if (event.target !== tr) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       open();

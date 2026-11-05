@@ -337,3 +337,25 @@ def test_findings_reread_per_request(tmp_path: Path) -> None:
         srv.server_close()
     assert first["findings"]["agent"] == "Test agent"
     assert second["findings"]["agent"] == "Other"
+
+
+def test_validation_errors_never_blank_the_page(tmp_path: Path) -> None:
+    huge = [
+        {"item_id": MOVIES.id, "action": "delete", "confidence": 10**400, "reason": "r"}
+    ]
+    scan_path, _ = write_pair(tmp_path, recommendations=huge)
+    view: Any = load_view(scan_path, 0.0)
+    assert view["findings"] is None
+    assert view["findings_note"].startswith("Agent findings were not shown:")
+
+
+def test_findings_for_an_older_scan_are_noted_after_a_rescan(tmp_path: Path) -> None:
+    old_scan, _ = write_pair(tmp_path)
+    new_scan = old_scan.parent / "T.json"
+    new_scan.write_text(old_scan.read_text())
+    view: Any = load_view(new_scan, 0.0)
+    assert view["findings"] is None
+    assert view["findings_note"] == (
+        "Agent findings are for an older scan (S.json). Ask your agent to run "
+        "AGENT_PLAYBOOK.md again for this scan."
+    )
