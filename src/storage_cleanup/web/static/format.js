@@ -41,3 +41,18 @@ export function formatDate(iso) {
 export function token(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+
+const AGE_LABELS = {
+  "last-opened": "Last opened",
+  "last-modified": "Last modified",
+  "last-commit": "Last commit",
+  installed: "Installed",
+  created: "Created",
+  "last-container-use": "Last used by a container",
+};
+
+// "Last opened 3 months ago", "Installed 2.1 years ago".
+export function describeAge(signal, days) {
+  const label = AGE_LABELS[signal] ?? "Last used";
+  return days === null || days === undefined ? `${label}: unknown` : `${label} ${formatAge(days)} ago`;
+}

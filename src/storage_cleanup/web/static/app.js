@@ -1,4 +1,5 @@
-import { formatAge, formatBytes, formatDate } from "./format.js";
+import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
+import { renderScatter } from "./scatter.js";
 import { renderTreemap } from "./treemap.js";
 
 const $ = (id) => document.getElementById(id);
@@ -85,7 +86,7 @@ function openSkipped(skipped) {
 const FACTS = [
   ["Size", (e) => (e.value ?? e.size) !== undefined ? formatBytes(e.value ?? e.size) : null],
   ["Category", (e) => e.categoryName ?? null],
-  ["Last used", (e) => (e.age_days !== undefined ? `${formatAge(e.age_days)} ago (${e.age_signal ?? "unknown"})` : null)],
+  ["Age", (e) => (e.age_days !== undefined ? describeAge(e.age_signal, e.age_days) : null)],
   ["Your files", (e) => (e.own_bytes !== undefined ? formatBytes(e.own_bytes) : null)],
   ["Rebuildable", (e) => (e.regenerable_bytes !== undefined ? formatBytes(e.regenerable_bytes) : null)],
   ["Last commit", (e) => (e.last_commit_days !== undefined ? (e.last_commit_days === null ? "unknown" : `${formatAge(e.last_commit_days)} ago`) : null)],
@@ -136,7 +137,13 @@ function treemapSection(view, onSelect) {
   draw();
 }
 
-const sections = [treemapSection];
+function scatterSection(view, onSelect) {
+  const draw = () => renderScatter($("scatter"), view, onSelect);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  draw();
+}
+
+const sections = [treemapSection, scatterSection];
 
 async function main() {
   document.querySelector("#detail .close").addEventListener("click", closeDetail);
