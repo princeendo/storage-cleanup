@@ -23,6 +23,7 @@ class Recommendation:
     confidence: float
     reason: str
     source: str
+    rule: str = ""  # which rule made it ("agent" for agent findings)
 
 
 def size_factor(size_bytes: int) -> float:
@@ -76,46 +77,62 @@ def rule_recommendations(scan: Scan, now: float) -> list[Recommendation]:
             parent = by_id.get(parent.parent_id) if parent.parent_id else None
         return None
 
-    def rule(item: Item) -> tuple[float, str] | None:
+    def rule(item: Item) -> tuple[float, str, str] | None:
         d = item.details
         if item.kind == ItemKind.CACHE and DEV_CACHES in item.categories:
             return (
                 0.9,
                 f"{_text(d.get('why_safe'))} {_text(d.get('regenerates'))}".strip(),
+                "dev-cache",
             )
         if DOWNLOADS in item.categories and d.get("installer_for"):
             return (
                 0.85,
                 f"Installer for {d['installer_for']}, which is already installed.",
+                "installer",
             )
         if item.kind == ItemKind.DOCKER_BUILD_CACHE:
-            return 0.9, "Docker build cache; rebuilt when images are built again."
+            return (
+                0.9,
+                "Docker build cache; rebuilt when images are built again.",
+                "docker-build-cache",
+            )
         if item.kind == ItemKind.DOCKER_IMAGE and d.get("containers") == 0:
             age = _age_days(item, now)
             if age is not None and age >= _STALE_DAYS:
-                return 0.6, f"Docker image no container has used in {format_age(age)}."
+                return (
+                    0.6,
+                    f"Docker image no container has used in {format_age(age)}.",
+                    "docker-image",
+                )
             return None
         if item.kind == ItemKind.REGENERABLE:
             repo = repo_of(item)
             age = _age_days(repo, now) if repo is not None else None
             if age is not None and age >= _STALE_DAYS:
-                return 0.7, (
+                return (
+                    0.7,
                     f"{_text(d.get('pattern'))} in a project last committed "
-                    f"{format_age(age)} ago; rebuilt by its tools."
+                    f"{format_age(age)} ago; rebuilt by its tools.",
+                    "regenerable",
                 )
             return None
         if item.kind == ItemKind.AI_SESSIONS and d.get("cwd_exists") is False:
-            return 0.6, (
+            return (
+                0.6,
                 f"{_text(d.get('tool_name'))} sessions for a folder that no longer "
-                f"exists ({_text(d.get('cwd'))})."
+                f"exists ({_text(d.get('cwd'))}).",
+                "ai-sessions",
             )
         if LEFTOVER_APP_DATA in item.categories:
             age = _age_days(item, now)
             if age is not None and age < _IN_USE_DAYS:
                 return None  # something still writes here: probably not leftover
-            return 0.5, (
+            return (
+                0.5,
                 f"Data left by {_text(d.get('guessed_owner'))}, which is no longer "
-                "installed."
+                "installed.",
+                "leftover-app-data",
             )
         return None
 
@@ -123,7 +140,7 @@ def rule_recommendations(scan: Scan, now: float) -> list[Recommendation]:
 
 
 def _apply(
-    scan: Scan, rule: Callable[[Item], tuple[float, str] | None]
+    scan: Scan, rule: Callable[[Item], tuple[float, str, str] | None]
 ) -> list[Recommendation]:
     recs: list[Recommendation] = []
     for item in scan.items:
@@ -131,6 +148,8 @@ def _apply(
             continue
         found = rule(item)
         if found is not None:
-            confidence, reason = found
-            recs.append(Recommendation(item.id, "delete", confidence, reason, "rule"))
+            confidence, reason, name = found
+            recs.append(
+                Recommendation(item.id, "delete", confidence, reason, "rule", name)
+            )
     return recs

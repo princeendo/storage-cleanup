@@ -92,6 +92,7 @@ def recommendation_rows(
             "confidence": rec.confidence,
             "reason": rec.reason,
             "source": rec.source,
+            "rule": rec.rule,
             "score": score(rec.confidence, item.size_bytes),
             "protected": False,
         }
@@ -108,11 +109,13 @@ def recommendation_rows(
         ordered: list[JsonValue] = [*sorted(children, key=_score_of, reverse=True)]
         rows[item_id]["children"] = ordered
 
-    siblings: dict[tuple[str, str], list[Row]] = {}
+    # Roll up only like with like: same folder, same action, same rule.
+    siblings: dict[tuple[str, str, str], list[Row]] = {}
     for row in top:
         parent_id = by_id[str(row["item_id"])].parent_id
         if parent_id is not None and parent_id in by_id:
-            siblings.setdefault((parent_id, str(row["action"])), []).append(row)
+            key = (parent_id, str(row["action"]), str(row["rule"]))
+            siblings.setdefault(key, []).append(row)
 
     rolled = {
         id(row)
@@ -121,7 +124,7 @@ def recommendation_rows(
         for row in group
     }
     result: list[Row] = [row for row in top if id(row) not in rolled]
-    for (parent_id, action), group in siblings.items():
+    for (parent_id, action, rule), group in siblings.items():
         if len(group) < ROLLUP_MIN_ITEMS:
             continue
         parent = by_id[parent_id]
@@ -133,7 +136,7 @@ def recommendation_rows(
         categories = {r["category"] for r in group}
         result.append(
             {
-                "id": f"rollup:{parent_id}:{action}",
+                "id": f"rollup:{parent_id}:{action}" + (f":{rule}" if rule else ""),
                 "item_id": None,
                 "name": f"{len(group)} items in {parent.name}",
                 "path": parent.path,
@@ -147,6 +150,7 @@ def recommendation_rows(
                 if len(reasons) == 1
                 else f"{len(group)} items; open to see each reason",
                 "source": sources.pop() if len(sources) == 1 else "mixed",
+                "rule": rule,
                 "score": score(confidence, size),
                 "protected": False,
                 "children": members,

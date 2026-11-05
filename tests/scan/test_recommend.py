@@ -239,3 +239,14 @@ def test_leftover_data_in_recent_use_is_not_recommended() -> None:
         3,
     )
     assert rule_recommendations(scan_of([recent], used=10 * GIB), NOW) == []
+
+
+def test_rules_name_themselves() -> None:
+    items = rule_items()
+    recs = {
+        r.item_id: r.rule
+        for r in rule_recommendations(scan_of(items, used=100 * GIB), NOW)
+    }
+    assert recs[items[0].id] == "dev-cache"
+    assert recs[items[1].id] == "installer"
+    assert recs[items[8].id] == "leftover-app-data"

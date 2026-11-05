@@ -154,3 +154,17 @@ def test_build_view_without_findings_uses_rules() -> None:
     assert view["findings"] is None
     assert view["findings_note"] == "note"
     assert [r["source"] for r in view["recommendations"]] == ["rule"]
+
+
+def test_rollup_does_not_mix_rules() -> None:
+    recs = [
+        Recommendation(DMGS[0].id, "delete", 0.9, "a", "rule", "dev-cache"),
+        Recommendation(DMGS[1].id, "delete", 0.9, "b", "rule", "dev-cache"),
+        Recommendation(DMGS[2].id, "delete", 0.9, "c", "rule", "dev-cache"),
+        Recommendation(DMGS[3].id, "delete", 0.5, "d", "rule", "leftover-app-data"),
+    ]
+    rows = rows_of(recs)
+    rollups = [r for r in rows if r["id"].startswith("rollup:")]
+    assert [len(r["children"]) for r in rollups] == [3]
+    assert rollups[0]["confidence"] == 0.9
+    assert len(rows) == 2

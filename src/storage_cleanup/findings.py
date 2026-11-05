@@ -109,6 +109,7 @@ def parse_findings(text: str) -> Findings:
             confidence=_field(r, "confidence", f"recommendations[{n}]."),
             reason=str(_field(r, "reason", f"recommendations[{n}].")),
             source="agent",
+            rule="agent",
         )
         for n, r in enumerate(_list(data, "recommendations", ""))
     )
