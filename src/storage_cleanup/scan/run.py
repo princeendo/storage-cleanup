@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from storage_cleanup.scan.aggregate import category_totals, link_tree, location_totals
+from storage_cleanup.scan.collectors.ai_tools import collect_ai_tools
 from storage_cleanup.scan.collectors.apps import collect_apps
 from storage_cleanup.scan.collectors.downloads import collect_downloads
 from storage_cleanup.scan.collectors.home import collect_home
@@ -26,6 +27,7 @@ DEFAULT_COLLECTORS: tuple[tuple[str, Collector], ...] = (
     ("home", collect_home),
     ("apps", collect_apps),
     ("downloads", collect_downloads),
+    ("ai-tools", collect_ai_tools),
 )
 
 
