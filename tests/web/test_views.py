@@ -148,6 +148,23 @@ def test_small_children_are_grouped() -> None:
     assert smaller.name == "50 smaller items"
     assert smaller.value == 50 * MIB
     assert smaller.id == f"smaller:{folder.id}"
+    assert len(smaller.children) == 50
+    assert {c.kind for c in smaller.children} == {"item"}
+
+
+def test_smaller_box_shows_largest_and_bundles_the_rest() -> None:
+    folder = path_item("/h/Movies", 120 * MIB + 120)
+    clips = [path_item(f"/h/Movies/c{i}", MIB + i, kind="file") for i in range(120)]
+    tree = category_tree(scan_of([folder, *clips], used=1024**4))
+    smaller = find(tree, f"smaller:{folder.id}")
+    assert smaller.name == "120 smaller items"
+    shown = [c for c in smaller.children if c.kind == "item"]
+    [more] = [c for c in smaller.children if c.kind == "more"]
+    assert len(shown) == 50
+    assert shown[0].value == MIB + 119
+    assert more.name == "70 more items"
+    assert more.children == []
+    assert sum(c.value for c in smaller.children) == smaller.value
 
 
 def test_single_small_child_is_not_grouped() -> None:
@@ -165,7 +182,7 @@ def test_large_scan_node_count_is_bounded() -> None:
         for j in range(1000)
     ]
     tree = category_tree(scan_of([*folders, *files], used=1024**4))
-    assert len(all_nodes(tree)) < 500
+    assert len(all_nodes(tree)) < 2_000
 
 
 def test_empty_scan() -> None:

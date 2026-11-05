@@ -40,6 +40,7 @@ OTHER_LOCATIONS: Final = "Other locations"
 DOCKER_DISK: Final = "Docker virtual disk"
 SMALL_MIN_BYTES: Final = 64 * 1024**2
 SMALL_FRACTION: Final = 0.01
+SMALLER_SHOWN: Final = 50  # items shown when a "smaller items" box is opened
 
 
 @dataclass
@@ -143,6 +144,19 @@ def _group_small(node: TreeNode, small_min_bytes: int) -> None:
         kept = [
             c for c in node.children if id(c) not in small_ids and c.kind != "system"
         ]
+        small.sort(key=lambda c: c.value, reverse=True)
+        inside = small[:SMALLER_SHOWN]
+        rest = small[SMALLER_SHOWN:]
+        if rest:
+            inside.append(
+                TreeNode(
+                    id=f"more:{node.id}",
+                    name=f"{len(rest)} more items",
+                    value=sum(c.value for c in rest),
+                    kind="more",
+                    group=node.group,
+                )
+            )
         kept.append(
             TreeNode(
                 id=f"smaller:{node.id}",
@@ -150,12 +164,16 @@ def _group_small(node: TreeNode, small_min_bytes: int) -> None:
                 value=sum(c.value for c in small),
                 kind="smaller",
                 group=node.group,
+                children=inside,
             )
         )
         kept.extend(c for c in node.children if c.kind == "system")
         node.children = kept
     for child in node.children:
-        _group_small(child, small_min_bytes)
+        # A "smaller" box is opened, not regrouped; its items get the usual pass.
+        targets = child.children if child.kind == "smaller" else [child]
+        for target in targets:
+            _group_small(target, small_min_bytes)
 
 
 def _partition(

@@ -31,7 +31,9 @@ function toData(node, lens, group, used) {
     ink: inkFor(lens, top) === "#ffffff" ? "light" : "dark",
   };
   if (node.children?.length) {
-    data.children = node.children.map((child) => toData(child, lens, top, used));
+    // A top-level "smaller items" box holds whole groups; let each keep its color.
+    const inherited = node.kind === "smaller" && group === null ? null : top;
+    data.children = node.children.map((child) => toData(child, lens, inherited, used));
   }
   return data;
 }
