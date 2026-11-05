@@ -52,6 +52,12 @@ function renderKpis(view) {
       status: lowSpace ? { kind: "critical", text: "Low on space" } : { kind: "good", text: "Healthy" },
     }),
     kpi({
+      label: "Recommended to reclaim",
+      value: formatBytes(o.reclaimable_bytes),
+      sub: `${o.recommendation_count} recommendation${o.recommendation_count === 1 ? "" : "s"}`,
+      onClick: () => switchTab("recommendations"),
+    }),
+    kpi({
       label: "Waiting in the Trash",
       value: o.trash_bytes === null ? "Can't read" : formatBytes(o.trash_bytes),
       sub: o.trash_bytes === null ? "macOS blocks reading the Trash" : "Freed once emptied",
@@ -91,6 +97,11 @@ const FACTS = [
   ["Your files", (e) => (e.own_bytes !== undefined ? formatBytes(e.own_bytes) : null)],
   ["Rebuildable", (e) => (e.regenerable_bytes !== undefined ? formatBytes(e.regenerable_bytes) : null)],
   ["Last commit", (e) => (e.last_commit_days !== undefined ? (e.last_commit_days === null ? "unknown" : `${formatAge(e.last_commit_days)} ago`) : null)],
+  ["Action", (e) => (e.action ? (e.action === "archive" ? "Archive" : "Delete (to the Trash)") : null)],
+  ["Confidence", (e) => (typeof e.confidence === "number" ? `${Math.round(e.confidence * 100)}%` : null)],
+  ["Score", (e) => (typeof e.score === "number" ? `${e.score} of 100` : null)],
+  ["Suggested by", (e) => (e.source ? { agent: "Agent", rule: "Built-in rule", mixed: "Agent and rules" }[e.source] ?? e.source : null)],
+  ["Why", (e) => e.reason ?? null],
   ["Uncommitted changes", (e) => (e.dirty === undefined || e.dirty === null ? null : e.dirty ? "Yes" : "No")],
   ["Unpushed commits", (e) => e.unpushed_commits ?? null],
   ["Has a remote", (e) => (e.has_remote === undefined || e.has_remote === null ? null : e.has_remote ? "Yes" : "No")],
@@ -106,8 +117,19 @@ function showDetail(entry) {
     if (value === null || value === undefined) continue;
     facts.append(el("dt", null, label), el("dd", null, value));
   }
-  const old = document.querySelector("#detail .protected");
-  if (old) old.remove();
+  for (const old of document.querySelectorAll("#detail .protected, #detail .detail-body, #detail .detail-items")) {
+    old.remove();
+  }
+  if (entry.body) facts.before(el("p", "detail-body", entry.body));
+  if (entry.items?.length) {
+    const list = el("ul", "detail-items");
+    for (const item of entry.items) {
+      const li = el("li");
+      li.append(el("div", "item-name", `${item.name} · ${formatBytes(item.size)}`), el("div", "path", item.path ?? ""));
+      list.append(li);
+    }
+    $("detail").append(list);
+  }
   if (entry.protected) {
     $("detail").append(el("div", "status critical protected", "Protected: never removed by this tool"));
   }
@@ -120,6 +142,51 @@ function closeDetail() {
   const panel = $("detail");
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
+}
+
+function findingsSection(view, onSelect) {
+  const body = $("findings-body");
+  const findings = view.findings;
+  body.replaceChildren();
+  if (!findings) {
+    $("findings-byline").textContent = "";
+    body.append(
+      el(
+        "p",
+        "empty",
+        "No agent findings yet. Ask your coding agent to follow AGENT_PLAYBOOK.md in this repository.",
+      ),
+    );
+    return;
+  }
+  $("findings-byline").textContent = `By ${findings.agent} · ${formatDate(findings.created_at)}`;
+  for (const headline of findings.headlines) {
+    const card = el("button", "finding-card");
+    card.type = "button";
+    const total = headline.items.reduce((sum, i) => sum + i.size, 0);
+    const count = headline.items.length;
+    card.append(
+      el("div", "finding-title", headline.title),
+      el("div", "finding-body", headline.body),
+      el("div", "finding-meta", count ? `${count} item${count === 1 ? "" : "s"} · ${formatBytes(total)}` : ""),
+    );
+    card.addEventListener("click", () => onSelect({ name: headline.title, body: headline.body, items: headline.items }));
+    body.append(card);
+  }
+}
+
+const TABS = ["overview", "recommendations"];
+
+function switchTab(name) {
+  const tab = TABS.includes(name) ? name : "overview";
+  for (const id of TABS) {
+    $(id).hidden = id !== tab;
+    const button = document.querySelector(`nav.tabs [data-tab="${id}"]`);
+    button.setAttribute("aria-selected", String(id === tab));
+  }
+  if (location.hash !== `#${tab}`) history.replaceState(null, "", `#${tab}`);
+  // Charts drawn while hidden have no size; let them measure again.
+  window.dispatchEvent(new Event("resize"));
 }
 
 // Each section draws itself from the view; onSelect opens the detail panel.
@@ -148,9 +215,13 @@ function projectsSection(view, onSelect) {
   renderProjects($("projects-body"), view, onSelect);
 }
 
-const sections = [treemapSection, scatterSection, projectsSection];
+const sections = [findingsSection, treemapSection, scatterSection, projectsSection];
 
 async function main() {
+  for (const button of document.querySelectorAll("nav.tabs [data-tab]")) {
+    button.addEventListener("click", () => switchTab(button.dataset.tab));
+  }
+  switchTab(location.hash.slice(1));
   document.querySelector("#detail .close").addEventListener("click", closeDetail);
   document.querySelector("#skipped .icon-button").addEventListener("click", () => $("skipped").close());
   document.addEventListener("keydown", (event) => {
@@ -164,6 +235,7 @@ async function main() {
     return;
   }
   renderKpis(view);
+  if (view.findings_note) showBanner(view.findings_note);
   for (const render of sections) {
     try {
       render(view, showDetail);

@@ -343,3 +343,20 @@ aside#detail .protected { margin-top: 14px; }
 .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .badge { font-size: 11px; color: var(--ink-2); background: var(--wash); border-radius: 999px; padding: 1px 8px; }
 .show-all { margin-top: 12px; appearance: none; border: 0; background: var(--wash); color: var(--ink); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+
+/* Findings */
+.finding-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.finding-card {
+  appearance: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--surface-raised); border-radius: 10px; padding: 14px 16px;
+  box-shadow: inset 0 0 0 1px var(--ring), inset 3px 0 0 var(--accent);
+}
+.finding-card:hover { background: var(--wash); }
+.finding-title { font-weight: 620; font-size: 15px; margin-bottom: 4px; }
+.finding-body { color: var(--ink-2); font-size: 13px; }
+.finding-meta { color: var(--ink-muted); font-size: 12px; margin-top: 8px; }
+aside#detail .detail-body { color: var(--ink-2); font-size: 14px; margin: 12px 0 0; }
+aside#detail .detail-items { list-style: none; padding: 0; margin: 16px 0 0; }
+aside#detail .detail-items li { padding: 8px 0; border-top: 1px solid var(--hairline); font-size: 13px; }
+aside#detail .item-name { font-weight: 600; }
+#recs-summary { margin-bottom: 12px; }

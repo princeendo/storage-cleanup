@@ -16,16 +16,26 @@
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Views">
-    <button role="tab" aria-selected="true">Overview</button>
-    <button role="tab" aria-selected="false" disabled>Recommendations<span class="soon">coming soon</span></button>
+    <button role="tab" aria-selected="true" data-tab="overview" aria-controls="overview">Overview</button>
+    <button role="tab" aria-selected="false" data-tab="recommendations" aria-controls="recommendations">Recommendations</button>
     <button role="tab" aria-selected="false" disabled>Archive<span class="soon">coming soon</span></button>
     <button role="tab" aria-selected="false" disabled>Delete<span class="soon">coming soon</span></button>
   </nav>
 
   <div id="banner" class="banner" hidden></div>
 
-  <main id="overview">
+  <main id="overview" role="tabpanel">
     <div class="kpis" id="kpis"></div>
+
+    <section class="card" id="findings">
+      <div class="card-head">
+        <div>
+          <h2>Findings</h2>
+          <p class="lede" id="findings-byline"></p>
+        </div>
+      </div>
+      <div class="finding-grid" id="findings-body"></div>
+    </section>
 
     <section class="card" id="where">
       <div class="card-head">
@@ -51,6 +61,14 @@
       <h2>Dead weight in your projects</h2>
       <p class="lede">Your files compared with folders that tools can rebuild, such as <code>node_modules</code> and <code>.venv</code>.</p>
       <div id="projects-body"></div>
+    </section>
+  </main>
+
+  <main id="recommendations" role="tabpanel" hidden>
+    <section class="card">
+      <h2>Recommendations</h2>
+      <p class="lede" id="recs-summary"></p>
+      <div id="recs-body"></div>
     </section>
   </main>
 </div>

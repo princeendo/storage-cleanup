@@ -115,7 +115,9 @@ and the user should learn something from it:
 - Bad: "You have a lot of files." (no numbers, nothing to check)
 
 A title is at most 80 characters and a body at most 300. List the item IDs
-the card is about, so the page can show them.
+the card is about, so the page can show them. The page shows the total size
+of the items you cite, so **cite every item behind a number** (all 38
+environments, not the largest six), or the card will contradict itself.
 
 You may also group items into your own categories (for example
 `"id": "rom-collections"`) when that helps the user see a pattern.
