@@ -4,7 +4,7 @@ import pytest
 
 from storage_cleanup.scan.collectors import home as home_mod
 from storage_cleanup.scan.collectors.home import collect_home
-from storage_cleanup.scan.context import PRIVACY_SKIP_REASON
+from storage_cleanup.scan.context import CLOUD_SKIP_REASON, PRIVACY_SKIP_REASON
 from storage_cleanup.scan.model import AgeSignal
 from tests.helpers import make_ctx, make_file
 
@@ -47,3 +47,13 @@ def test_containers_skipped_unless_opted_in(tmp_path: Path) -> None:
     opted = collect_home(make_ctx(home, include_app_data=True))
     library = next(i for i in opted.items if i.name == "Library")
     assert library.file_count == 1
+
+
+def test_cloud_storage_is_never_walked(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    make_file(home / "Library" / "CloudStorage" / "GoogleDrive-x" / "f", 100_000)
+    for ctx in (make_ctx(home), make_ctx(home, include_app_data=True)):
+        result = collect_home(ctx)
+        assert [s.reason for s in result.skipped] == [CLOUD_SKIP_REASON]
+        library = next(i for i in result.items if i.name == "Library")
+        assert library.file_count == 0
