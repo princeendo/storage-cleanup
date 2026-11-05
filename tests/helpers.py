@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from storage_cleanup.scan.context import CommandResult, ScanContext
+from storage_cleanup.scan.context import CommandResult, Runner, ScanContext
 from storage_cleanup.scan.ids import item_id
 from storage_cleanup.scan.model import Item, JsonValue, SizeSource
 
@@ -59,9 +59,7 @@ def path_item(
     )
 
 
-def make_ctx(
-    home: Path, runner: FakeRunner | None = None, **kwargs: Any
-) -> ScanContext:
+def make_ctx(home: Path, runner: Runner | None = None, **kwargs: Any) -> ScanContext:
     home.mkdir(parents=True, exist_ok=True)
     defaults: dict[str, Any] = {
         "home": home,

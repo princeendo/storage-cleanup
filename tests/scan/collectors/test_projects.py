@@ -64,8 +64,10 @@ def test_regenerable_dirs_summed_not_descended(tmp_path: Path) -> None:
     assert regenerable[0].details["pattern"] == "node_modules"
     assert regenerable[0].categories == ("projects",)
     nm = regenerable[0].size_bytes
-    assert repo_item.details["regenerable_bytes"] > nm  # includes small __pycache__
-    assert repo_item.details["regenerable_bytes"] < nm + MIB  # target/ not counted
+    total = repo_item.details["regenerable_bytes"]
+    assert isinstance(total, int)
+    assert total > nm  # includes small __pycache__
+    assert total < nm + MIB  # target/ not counted
 
 
 def test_cargo_target_counted(tmp_path: Path) -> None:
