@@ -25,3 +25,6 @@ reports/
 
 # Per-machine agent guidance (user preferences, identity); never committed
 local_agent_guidance.md
+
+# Brainstorming mockups (local only)
+.superpowers/
