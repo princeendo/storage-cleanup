@@ -7,6 +7,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from storage_cleanup import __version__
+from storage_cleanup.findings import (
+    findings_path_for,
+    parse_findings,
+    validate_findings,
+)
 from storage_cleanup.scan.categories import DISPLAY_NAMES
 from storage_cleanup.scan.collectors.targeted import collect_path
 from storage_cleanup.scan.context import ScanContext, subprocess_runner
@@ -91,7 +96,57 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--no-open", action="store_true", help="Print the link; don't open a browser."
     )
+    findings = commands.add_parser(
+        "findings", help="Check or locate an agent's findings file."
+    )
+    findings_commands = findings.add_subparsers(dest="findings_command", required=True)
+    check = findings_commands.add_parser("check", help="Validate a findings file.")
+    check.add_argument("file", type=Path)
+    check.add_argument(
+        "--scan", type=Path, help="Scan file (default: the scan the findings name)."
+    )
+    where = findings_commands.add_parser(
+        "path", help="Print where findings for a scan belong."
+    )
+    where.add_argument("--scan", type=Path, help="Scan file (default: the latest).")
+    where.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("reports/scans"),
+        help="Where to look for the latest scan (default: reports/scans).",
+    )
     return parser
+
+
+def _findings(args: argparse.Namespace) -> int:
+    if args.findings_command == "path":
+        scan_path = args.scan or latest_scan(args.output_dir)
+        if scan_path is None:
+            print('No scan found. Run "storage-cleanup scan" first.', file=sys.stderr)
+            return 2
+        print(findings_path_for(scan_path))
+        return 0
+    try:
+        findings = parse_findings(args.file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"Cannot read findings {args.file}: {exc}")
+        return 1
+    scan_path = args.scan or args.file.parent.parent / "scans" / findings.scan
+    try:
+        scan = scan_from_json(scan_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Cannot read the scan these findings name ({scan_path}): {exc}")
+        return 1
+    problems = validate_findings(findings, scan, scan_path.name)
+    if problems:
+        for problem in problems:
+            print(problem)
+        return 1
+    print(
+        f"Findings are valid: {len(findings.headlines)} headlines, "
+        f"{len(findings.recommendations)} recommendations."
+    )
+    return 0
 
 
 def _serve(args: argparse.Namespace) -> int:
@@ -165,5 +220,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _scan(args)
     if args.command == "serve":
         return _serve(args)
+    if args.command == "findings":
+        return _findings(args)
     parser.print_help()
     return 0
