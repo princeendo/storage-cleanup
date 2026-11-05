@@ -92,6 +92,22 @@ your git projects spend on rebuildable folders such as `node_modules`.
 - `--scan FILE` shows a specific scan, `--port N` picks the port, and
   `--no-open` prints the link without opening a browser.
 
+## Asking an agent to analyze your Mac
+
+Open a coding agent (Claude Code, Codex, OpenCode, …) in this repository and
+ask it to "analyze my device". It follows [`AGENT_PLAYBOOK.md`](AGENT_PLAYBOOK.md):
+
+1. It runs the scan and studies it with `storage-cleanup inspect`, which
+   answers focused questions without reading the whole scan file.
+2. It looks closer with read-only commands, so it can say what things *are*.
+3. It writes a findings file under `reports/findings/`: headline cards, its
+   own categories, and recommendations with a confidence and a one-line reason.
+4. It checks the file with `storage-cleanup findings check` and opens the page.
+
+The agent never removes anything. Without an agent, the page still shows
+rule-based recommendations for well-known safe items such as developer caches
+and installers for apps you already have.
+
 ## Development
 
 ```bash

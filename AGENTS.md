@@ -17,6 +17,12 @@ rules below take priority over speed and convenience.
 3. Run `git status` and `git pull --ff-only`. If the pull is not clean, stop
    and ask before doing anything else.
 
+## Analyzing a Device
+
+When the user asks you to analyze their Mac, follow `AGENT_PLAYBOOK.md`. It is
+read-only: you write a findings file under `reports/findings/`, and the user
+acts in the page.
+
 ## Scope
 
 - macOS only for now. Do not add support for other platforms (Linux, Windows,

@@ -322,6 +322,7 @@ def test_build_view_is_json_serializable_with_hostile_names() -> None:
     assert set(view) == {
         "schema", "overview", "categories", "locations", "scatter",
         "projects", "reclaim_zone", "category_names",
+        "recommendations", "findings", "findings_note",
     }  # fmt: skip
     names = view["category_names"]
     assert isinstance(names, dict)

@@ -3,7 +3,7 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from storage_cleanup.scan.categories import (
     AI_TOOLING,
@@ -20,6 +20,9 @@ from storage_cleanup.scan.categories import (
     PROJECTS,
 )
 from storage_cleanup.scan.model import AgeSignal, Item, ItemKind, JsonValue, Scan
+
+if TYPE_CHECKING:
+    from storage_cleanup.findings import Findings
 
 CATEGORY_PRECEDENCE: Final[tuple[str, ...]] = (
     AI_TOOLING,
@@ -364,12 +367,68 @@ def overview(scan: Scan) -> dict[str, JsonValue]:
     }
 
 
-def build_view(scan: Scan, now: float) -> dict[str, JsonValue]:
+def _findings_view(scan: Scan, findings: "Findings") -> dict[str, JsonValue]:
+    by_id = {i.id: i for i in scan.items}
+
+    def items(ids: Sequence[str]) -> list[JsonValue]:
+        return [
+            {
+                "id": i,
+                "name": by_id[i].name,
+                "path": by_id[i].path,
+                "size": by_id[i].size_bytes,
+            }
+            for i in ids
+            if i in by_id
+        ]
+
+    return {
+        "agent": findings.agent,
+        "created_at": findings.created_at,
+        "headlines": [
+            {"title": h.title, "body": h.body, "items": items(h.item_ids)}
+            for h in findings.headlines
+        ],
+        "categories": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": c.description,
+                "item_ids": list(c.item_ids),
+                "item_count": len(c.item_ids),
+            }
+            for c in findings.categories
+        ],
+    }
+
+
+def build_view(
+    scan: Scan,
+    now: float,
+    findings: "Findings | None" = None,
+    findings_note: str | None = None,
+) -> dict[str, JsonValue]:
     """Everything the page needs, as one JSON-ready document."""
+    # Imported here: recommendations builds on this module's category groups.
+    from storage_cleanup.scan.recommend import rule_recommendations
+    from storage_cleanup.web.recommendations import (
+        merge_recommendations,
+        reclaimable_bytes,
+        recommendation_rows,
+    )
+
     names: dict[str, JsonValue] = {**DISPLAY_NAMES, SYSTEM_OTHER: SYSTEM_OTHER_NAME}
+    agent_recs = findings.recommendations if findings is not None else ()
+    recs = merge_recommendations(scan, rule_recommendations(scan, now), agent_recs)
+    summary = overview(scan)
+    summary["reclaimable_bytes"] = reclaimable_bytes(scan, recs)
+    summary["recommendation_count"] = len(recs)
     return {
         "schema": 1,
-        "overview": overview(scan),
+        "overview": summary,
+        "recommendations": list(recommendation_rows(scan, recs, now)),
+        "findings": _findings_view(scan, findings) if findings is not None else None,
+        "findings_note": findings_note,
         "categories": category_tree(scan).to_json(),
         "locations": location_tree(scan).to_json(),
         "scatter": list(scatter_points(scan, now)),

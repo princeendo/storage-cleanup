@@ -27,7 +27,10 @@ export function formatAge(days) {
   if (days < 1) return "today";
   if (days < 2) return "1 day";
   if (days < 45) return `${Math.floor(days)} days`;
-  if (days < 365) return `${Math.round(days / 30.44)} months`;
+  if (days < 365) {
+    const months = Math.round(days / 30.44);
+    return months === 1 ? "1 month" : `${months} months`;
+  }
   return `${(days / 365.25).toFixed(1)} years`;
 }
 
@@ -54,5 +57,6 @@ const AGE_LABELS = {
 // "Last opened 3 months ago", "Installed 2.1 years ago".
 export function describeAge(signal, days) {
   const label = AGE_LABELS[signal] ?? "Last used";
-  return days === null || days === undefined ? `${label}: unknown` : `${label} ${formatAge(days)} ago`;
+  if (days === null || days === undefined) return `${label}: unknown`;
+  return days < 1 ? `${label} today` : `${label} ${formatAge(days)} ago`;
 }

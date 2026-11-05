@@ -1,12 +1,18 @@
 """Command-line entry point."""
 
 import argparse
+import json
 import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from storage_cleanup import __version__
+from storage_cleanup import __version__, inspect_cmd
+from storage_cleanup.findings import (
+    findings_path_for,
+    parse_findings,
+    validate_findings,
+)
 from storage_cleanup.scan.categories import DISPLAY_NAMES
 from storage_cleanup.scan.collectors.targeted import collect_path
 from storage_cleanup.scan.context import ScanContext, subprocess_runner
@@ -91,7 +97,133 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--no-open", action="store_true", help="Print the link; don't open a browser."
     )
+    serve.add_argument(
+        "--findings",
+        type=Path,
+        help="Agent findings file (default: the one named after the scan).",
+    )
+    inspect = commands.add_parser(
+        "inspect", help="Ask focused questions about a scan (for agents)."
+    )
+    inspect.add_argument("--scan", type=Path, help="Scan file (default: the latest).")
+    inspect.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("reports/scans"),
+        help="Where to look for the latest scan (default: reports/scans).",
+    )
+    inspect.add_argument("--summary", action="store_true", help="Totals only.")
+    inspect.add_argument("--id", help="Show one item with all its details.")
+    inspect.add_argument("--category", help="Category ID, e.g. downloads.")
+    inspect.add_argument("--location", help='Location label, e.g. "Downloads".')
+    inspect.add_argument("--kind", help="Item kind, e.g. app or docker-image.")
+    inspect.add_argument("--under", help="Only paths that start with this.")
+    inspect.add_argument("--min-size", default="0", help="e.g. 500M or 2G.")
+    inspect.add_argument(
+        "--older-than", type=float, help="Only items unused for this many days."
+    )
+    inspect.add_argument("--include-protected", action="store_true")
+    inspect.add_argument("--sort", choices=["size", "age"], default="size")
+    inspect.add_argument("--limit", type=int, default=50)
+    inspect.add_argument("--json", action="store_true", help="Print JSON rows.")
+
+    findings = commands.add_parser(
+        "findings", help="Check or locate an agent's findings file."
+    )
+    findings_commands = findings.add_subparsers(dest="findings_command", required=True)
+    check = findings_commands.add_parser("check", help="Validate a findings file.")
+    check.add_argument("file", type=Path)
+    check.add_argument(
+        "--scan", type=Path, help="Scan file (default: the scan the findings name)."
+    )
+    where = findings_commands.add_parser(
+        "path", help="Print where findings for a scan belong."
+    )
+    where.add_argument("--scan", type=Path, help="Scan file (default: the latest).")
+    where.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("reports/scans"),
+        help="Where to look for the latest scan (default: reports/scans).",
+    )
     return parser
+
+
+def _inspect(args: argparse.Namespace) -> int:
+    scan_path = args.scan or latest_scan(args.output_dir)
+    if scan_path is None:
+        print('No scan found. Run "storage-cleanup scan" first.', file=sys.stderr)
+        return 2
+    try:
+        scan = scan_from_json(scan_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Cannot read scan {scan_path}: {exc}", file=sys.stderr)
+        return 2
+    if args.summary:
+        print(inspect_cmd.summary(scan))
+        return 0
+    if args.id:
+        item = next((i for i in scan.items if i.id == args.id), None)
+        if item is None:
+            print(f"No item with ID {args.id}", file=sys.stderr)
+            return 1
+        print(json.dumps(inspect_cmd.item_details(item), indent=1, ensure_ascii=False))
+        return 0
+    try:
+        min_bytes = inspect_cmd.parse_size(args.min_size)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    query = inspect_cmd.Query(
+        category=args.category,
+        location=args.location,
+        kind=args.kind,
+        path_prefix=args.under,
+        min_bytes=min_bytes,
+        older_than_days=args.older_than,
+        include_protected=args.include_protected,
+        limit=args.limit,
+        sort=args.sort,
+    )
+    now = time.time()
+    found = inspect_cmd.run_query(scan, query, now)
+    if args.json:
+        rows = [inspect_cmd.compact(i, now) for i in found[: args.limit]]
+        print(json.dumps(rows, indent=1, ensure_ascii=False))
+    else:
+        print(inspect_cmd.format_rows(found, now, limit=args.limit))
+    return 0
+
+
+def _findings(args: argparse.Namespace) -> int:
+    if args.findings_command == "path":
+        scan_path = args.scan or latest_scan(args.output_dir)
+        if scan_path is None:
+            print('No scan found. Run "storage-cleanup scan" first.', file=sys.stderr)
+            return 2
+        print(findings_path_for(scan_path))
+        return 0
+    try:
+        findings = parse_findings(args.file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"Cannot read findings {args.file}: {exc}")
+        return 1
+    scan_path = args.scan or args.file.parent.parent / "scans" / findings.scan
+    try:
+        scan = scan_from_json(scan_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Cannot read the scan these findings name ({scan_path}): {exc}")
+        return 1
+    problems = validate_findings(findings, scan, scan_path.name)
+    if problems:
+        for problem in problems:
+            print(problem)
+        return 1
+    print(
+        f"Findings are valid: {len(findings.headlines)} headlines, "
+        f"{len(findings.recommendations)} recommendations."
+    )
+    return 0
 
 
 def _serve(args: argparse.Namespace) -> int:
@@ -104,7 +236,15 @@ def _serve(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
-    serve(scan_path, port=args.port, open_browser=not args.no_open)
+    if args.findings is not None and not args.findings.is_file():
+        print(f"Cannot read findings {args.findings}: no such file.", file=sys.stderr)
+        return 2
+    serve(
+        scan_path,
+        port=args.port,
+        open_browser=not args.no_open,
+        findings_path=args.findings,
+    )
     return 0
 
 
@@ -165,5 +305,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _scan(args)
     if args.command == "serve":
         return _serve(args)
+    if args.command == "findings":
+        return _findings(args)
+    if args.command == "inspect":
+        return _inspect(args)
     parser.print_help()
     return 0

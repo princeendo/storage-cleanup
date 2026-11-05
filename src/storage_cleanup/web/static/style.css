@@ -343,3 +343,46 @@ aside#detail .protected { margin-top: 14px; }
 .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .badge { font-size: 11px; color: var(--ink-2); background: var(--wash); border-radius: 999px; padding: 1px 8px; }
 .show-all { margin-top: 12px; appearance: none; border: 0; background: var(--wash); color: var(--ink); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+
+/* Findings */
+.finding-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.finding-card {
+  appearance: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--surface-raised); border-radius: 10px; padding: 14px 16px;
+  box-shadow: inset 0 0 0 1px var(--ring), inset 3px 0 0 var(--accent);
+}
+.finding-card:hover { background: var(--wash); }
+.finding-title { font-weight: 620; font-size: 15px; margin-bottom: 4px; }
+.finding-body { color: var(--ink-2); font-size: 13px; }
+.finding-meta { color: var(--ink-muted); font-size: 12px; margin-top: 8px; }
+aside#detail .detail-body { color: var(--ink-2); font-size: 14px; margin: 12px 0 0; }
+aside#detail .detail-items { list-style: none; padding: 0; margin: 16px 0 0; }
+aside#detail .detail-items li { padding: 8px 0; border-top: 1px solid var(--hairline); font-size: 13px; }
+aside#detail .item-name { font-weight: 600; }
+#recs-summary { margin-bottom: 12px; }
+
+/* Recommendations */
+.filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.filter { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.filter select { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-raised); border: 0; box-shadow: inset 0 0 0 1px var(--ring); border-radius: 6px; padding: 4px 8px; }
+.recs-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 760px; }
+.recs-table th { text-align: left; font-weight: 500; color: var(--ink-muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--hairline); }
+.recs-table td { padding: 10px 8px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.recs-table tbody tr { cursor: pointer; }
+.recs-table tbody tr:hover, .recs-table tbody tr:focus-visible { background: var(--wash); outline: none; }
+.recs-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.recs-table .age { white-space: nowrap; color: var(--ink-2); font-size: 13px; }
+.recs-table .child-row td { background: var(--wash); }
+.score-cell { width: 92px; }
+.score-value { font-weight: 650; font-variant-numeric: tabular-nums; }
+.score-bar { height: 4px; border-radius: 2px; background: var(--hairline); margin-top: 6px; width: 72px; }
+.score-bar span { display: block; height: 100%; border-radius: 2px; background: var(--series-1); }
+.rec-head { display: flex; align-items: center; gap: 6px; }
+.rec-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.rec-reason { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+.expand { appearance: none; border: 0; background: var(--wash); color: var(--ink); width: 22px; height: 22px; border-radius: 6px; cursor: pointer; font-size: 12px; line-height: 1; }
+.chip { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; box-shadow: inset 0 0 0 1px var(--ring); }
+.chip.delete::before, .chip.archive::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.chip.delete::before { background: var(--series-2); }
+.chip.archive::before { background: var(--series-1); }
+.badge.source-agent { color: var(--ink); }
