@@ -1,18 +1,23 @@
+import json
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
 from storage_cleanup.scan.aggregate import category_totals, location_totals
 from storage_cleanup.scan.ids import item_id
-from storage_cleanup.scan.model import DiskUsage, Item, Scan, SizeSource
+from storage_cleanup.scan.model import AgeSignal, DiskUsage, Item, Scan, SizeSource
 from storage_cleanup.scan.run import finalize_items
 from storage_cleanup.web.views import (
     DOCKER_DISK,
     TreeNode,
+    build_view,
     category_tree,
     exclusive_sizes,
     location_tree,
+    overview,
     primary_category,
+    project_rows,
+    scatter_points,
 )
 from tests.helpers import path_item
 
@@ -186,3 +191,129 @@ def test_items_are_unsized_tool_reports_still_count() -> None:
     )
     tree = category_tree(scan_of([item]))
     assert {c.group: c.value for c in tree.children}["docker"] == 5
+
+
+GIB = 1024**3
+DAY = 86_400.0
+NOW = 1_800_000_000.0
+
+
+def aged(item: Item, days: float, signal: str = "last-modified") -> Item:
+    return replace(item, age_signal=AgeSignal(signal), age_timestamp=NOW - days * DAY)
+
+
+def test_scatter_includes_specific_kinds_and_top_level_only() -> None:
+    app = aged(
+        path_item("/Applications/Big.app", 2 * GIB, ("applications",), kind="app"), 10
+    )
+    deep = aged(path_item("/h/Movies/a/b", 2 * GIB), 10)
+    movies = aged(path_item("/h/Movies", 3 * GIB), 10)
+    points = scatter_points(scan_of([app, deep, movies], used=10 * GIB), NOW)
+    assert {p["id"] for p in points} == {app.id, movies.id}
+    point = next(p for p in points if p["id"] == app.id)
+    assert point["category"] == "applications"
+    assert point["size"] == 2 * GIB
+    assert point["age_days"] == 10
+    assert point["age_signal"] == "last-modified"
+    assert point["protected"] is False
+
+
+def test_scatter_includes_direct_downloads_children() -> None:
+    downloads = aged(path_item("/h/Downloads", 3 * GIB), 1)
+    dmg = aged(
+        path_item("/h/Downloads/x.dmg", 2 * GIB, ("downloads",), kind="file"), 50
+    )
+    points = scatter_points(scan_of([downloads, dmg], used=10 * GIB), NOW)
+    assert dmg.id in {p["id"] for p in points}
+
+
+def test_scatter_skips_small_and_ageless() -> None:
+    small = aged(path_item("/h/Small", 5 * MIB), 10)
+    ageless = path_item("/h/Ageless", 2 * GIB)
+    assert scatter_points(scan_of([small, ageless], used=10 * GIB), NOW) == []
+
+
+def test_in_zone_flag() -> None:
+    old_big = aged(path_item("/h/A", 2 * GIB), 400)
+    new_big = aged(path_item("/h/B", 2 * GIB), 30)
+    old_small = aged(path_item("/h/C", 500 * MIB), 900)
+    points = {
+        p["id"]: p
+        for p in scatter_points(
+            scan_of([old_big, new_big, old_small], used=10 * GIB), NOW
+        )
+    }
+    assert points[old_big.id]["in_zone"] is True
+    assert points[new_big.id]["in_zone"] is False
+    assert points[old_small.id]["in_zone"] is False
+
+
+def test_future_ages_floor_at_zero() -> None:
+    future = aged(path_item("/h/F", 2 * GIB), -5)
+    [point] = scatter_points(scan_of([future], used=10 * GIB), NOW)
+    assert point["age_days"] == 0
+
+
+def repo(name: str, size: int, regen: int, days: float | None) -> Item:
+    item = path_item(
+        f"/h/workspace/{name}",
+        size,
+        ("projects",),
+        kind="repo",
+        details={
+            "regenerable_bytes": regen,
+            "dirty": True,
+            "unpushed_commits": 2,
+            "has_remote": False,
+        },
+    )
+    return aged(item, days, "last-commit") if days is not None else item
+
+
+def test_project_rows_sorted_and_split() -> None:
+    a = repo("a", 10 * GIB, 1 * GIB, 30)
+    b = repo("b", 5 * GIB, 4 * GIB, 400)
+    c = repo("c", 1 * GIB, 0, None)
+    rows = project_rows(scan_of([a, b, c], used=100 * GIB), NOW)
+    assert [r["name"] for r in rows] == ["b", "a", "c"]
+    assert rows[0]["own_bytes"] == 1 * GIB
+    assert rows[0]["regenerable_bytes"] == 4 * GIB
+    assert rows[0]["last_commit_days"] == 400
+    assert rows[0]["dirty"] is True
+    assert rows[0]["unpushed_commits"] == 2
+    assert rows[0]["has_remote"] is False
+    assert rows[2]["last_commit_days"] is None
+
+
+def test_overview_handles_unreadable_trash() -> None:
+    data = overview(scan_of([LIB], used=300))
+    assert data["trash_bytes"] is None
+    assert data["used_bytes"] == 300
+    assert data["free_bytes"] == 300
+    assert data["total_bytes"] == 600
+    assert data["percent_free"] == 50.0
+    assert data["item_count"] == 1
+    assert data["skipped"] == []
+
+
+def test_build_view_is_json_serializable_with_hostile_names() -> None:
+    evil = "<img src=x onerror=alert(1)>"
+    item = aged(path_item(f"/h/{evil}", 2 * GIB), 10)
+    view = build_view(scan_of([item], used=10 * GIB), NOW)
+    assert evil in json.dumps(view, ensure_ascii=False)
+    assert view["schema"] == 1
+    assert set(view) == {
+        "schema", "overview", "categories", "locations", "scatter",
+        "projects", "reclaim_zone", "category_names",
+    }  # fmt: skip
+    names = view["category_names"]
+    assert isinstance(names, dict)
+    assert names["system-other"] == "macOS and everything not scanned"
+
+
+def test_build_view_empty_scan() -> None:
+    view = build_view(scan_of([], used=500), NOW)
+    assert view["scatter"] == []
+    assert view["projects"] == []
+    tree = json.loads(json.dumps(view["categories"]))
+    assert [c["kind"] for c in tree["children"]] == ["system"]

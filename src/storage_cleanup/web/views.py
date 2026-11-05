@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Final
 
 from storage_cleanup.scan.categories import (
@@ -18,7 +19,7 @@ from storage_cleanup.scan.categories import (
     PACKAGES,
     PROJECTS,
 )
-from storage_cleanup.scan.model import Item, JsonValue, Scan
+from storage_cleanup.scan.model import AgeSignal, Item, ItemKind, JsonValue, Scan
 
 CATEGORY_PRECEDENCE: Final[tuple[str, ...]] = (
     AI_TOOLING,
@@ -223,3 +224,128 @@ def category_tree(scan: Scan, *, small_min_bytes: int = SMALL_MIN_BYTES) -> Tree
 
 def location_tree(scan: Scan, *, small_min_bytes: int = SMALL_MIN_BYTES) -> TreeNode:
     return _partition(scan, location_groups(scan.items), lambda g: g, small_min_bytes)
+
+
+SCATTER_MIN_BYTES: Final = 10 * 1024**2
+RECLAIM_MIN_BYTES: Final = 1024**3
+RECLAIM_MIN_AGE_DAYS: Final = 365
+RECLAIM_ZONE: Final[dict[str, JsonValue]] = {
+    "min_bytes": RECLAIM_MIN_BYTES,
+    "min_age_days": RECLAIM_MIN_AGE_DAYS,
+}
+_GENERIC_KINDS: Final = frozenset({ItemKind.FOLDER, ItemKind.FILE})
+_DAY: Final = 86_400.0
+
+
+def _age_days(item: Item, now: float) -> float | None:
+    if item.age_timestamp is None:
+        return None
+    return max(0.0, (now - item.age_timestamp) / _DAY)
+
+
+def _is_scatter_unit(item: Item, home: Path) -> bool:
+    if item.kind not in _GENERIC_KINDS:
+        return True
+    if item.path is None:
+        return False
+    parent = Path(item.path).parent
+    return parent == home or parent == home / "Downloads"
+
+
+def scatter_points(scan: Scan, now: float) -> list[dict[str, JsonValue]]:
+    """One dot per meaningful item with a known age and at least 10 MiB."""
+    home = Path(scan.home)
+    groups = category_groups(scan.items)
+    points: list[dict[str, JsonValue]] = []
+    for item in scan.items:
+        age = _age_days(item, now)
+        if (
+            age is None
+            or item.size_bytes < SCATTER_MIN_BYTES
+            or not _is_scatter_unit(item, home)
+        ):
+            continue
+        points.append(
+            {
+                "id": item.id,
+                "name": item.name,
+                "path": item.path,
+                "size": item.size_bytes,
+                "age_days": age,
+                "age_signal": item.age_signal.value if item.age_signal else None,
+                "category": groups[item.id],
+                "protected": item.protected_reason is not None,
+                "in_zone": item.size_bytes >= RECLAIM_MIN_BYTES
+                and age >= RECLAIM_MIN_AGE_DAYS,
+            }
+        )
+    return points
+
+
+def _int(value: JsonValue) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def project_rows(scan: Scan, now: float) -> list[dict[str, JsonValue]]:
+    """Repositories: your files against regenerable folders, plus unsaved work."""
+    rows: list[dict[str, JsonValue]] = []
+    for item in scan.items:
+        if item.kind != ItemKind.REPO:
+            continue
+        regenerable = _int(item.details.get("regenerable_bytes"))
+        rows.append(
+            {
+                "id": item.id,
+                "name": item.name,
+                "path": item.path,
+                "size": item.size_bytes,
+                "regenerable_bytes": regenerable,
+                "own_bytes": max(0, item.size_bytes - regenerable),
+                "last_commit_days": _age_days(item, now)
+                if item.age_signal is AgeSignal.LAST_COMMIT
+                else None,
+                "dirty": item.details.get("dirty"),
+                "unpushed_commits": item.details.get("unpushed_commits"),
+                "has_remote": item.details.get("has_remote"),
+            }
+        )
+    rows.sort(
+        key=lambda r: (_int(r["regenerable_bytes"]), _int(r["size"])), reverse=True
+    )
+    return rows
+
+
+def overview(scan: Scan) -> dict[str, JsonValue]:
+    disk = scan.disk
+    percent = (
+        round(100 * disk.free_bytes / disk.total_bytes, 1) if disk.total_bytes else 0.0
+    )
+    return {
+        "used_bytes": disk.used_bytes,
+        "free_bytes": disk.free_bytes,
+        "total_bytes": disk.total_bytes,
+        "percent_free": percent,
+        "created_at": scan.created_at,
+        "trash_bytes": scan.trash_bytes,
+        "local_snapshots": len(scan.local_snapshots),
+        "skipped": [
+            {"path": s.path, "reason": s.reason, "collector": s.collector}
+            for s in scan.skipped
+        ],
+        "item_count": len(scan.items),
+    }
+
+
+def build_view(scan: Scan, now: float) -> dict[str, JsonValue]:
+    """Everything the page needs, as one JSON-ready document."""
+    names: dict[str, JsonValue] = {**DISPLAY_NAMES, SYSTEM_OTHER: SYSTEM_OTHER_NAME}
+    return {
+        "schema": 1,
+        "overview": overview(scan),
+        "categories": category_tree(scan).to_json(),
+        "locations": location_tree(scan).to_json(),
+        "scatter": list(scatter_points(scan, now)),
+        "projects": list(project_rows(scan, now)),
+        "reclaim_zone": dict(RECLAIM_ZONE),
+        "category_names": names,
+    }
