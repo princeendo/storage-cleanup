@@ -5,7 +5,7 @@ import stat
 from pathlib import Path, PurePath
 from typing import Final
 
-from storage_cleanup.actions.model import PlanEntry
+from storage_cleanup.actions.model import Method, PlanEntry
 from storage_cleanup.scan.measure import measure
 from storage_cleanup.scan.model import ItemKind, Scan
 from storage_cleanup.scan.protected import (
@@ -83,7 +83,7 @@ def verify_entry(
     entry: PlanEntry, scan: Scan, *, brew_prefix: Path | None
 ) -> str | None:
     """None if it is still safe to act on this entry; otherwise why it is skipped."""
-    if entry.path is None:
+    if entry.path is None or entry.method not in (Method.TRASH, Method.DELETE):
         return None  # Docker and Homebrew: their own commands decide
     path = Path(entry.path)
     home = Path(scan.home)

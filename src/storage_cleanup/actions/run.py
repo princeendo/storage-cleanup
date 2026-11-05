@@ -1,0 +1,202 @@
+"""Carry out a confirmed plan, one entry at a time, and log every outcome."""
+
+import json
+import os
+import shutil
+import stat
+import tempfile
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Final
+
+from storage_cleanup.actions.model import (
+    FREES_NOW,
+    ActionPlan,
+    Method,
+    PlanEntry,
+    plan_id,
+)
+from storage_cleanup.actions.verify import verify_entry
+from storage_cleanup.scan.context import Runner
+from storage_cleanup.scan.model import Scan
+
+TRASH_COMMAND: Final = "/usr/bin/trash"
+DETAIL_LIMIT: Final = 300
+
+
+@dataclass(frozen=True)
+class EntryResult:
+    item_id: str
+    name: str
+    path: str | None
+    method: Method
+    status: str  # "done" | "skipped" | "failed"
+    detail: str
+    size_bytes: int
+
+
+@dataclass(frozen=True)
+class ActionResult:
+    plan_id: str
+    permanent: bool
+    started_at: str
+    finished_at: str
+    results: tuple[EntryResult, ...]
+    free_before: int
+    free_after: int
+    moved_to_trash_bytes: int
+    freed_bytes: int
+    log_path: str
+
+
+def delete_path(path: Path) -> None:
+    """Permanently remove a file, link, or folder. Links are removed, never followed."""
+    st = os.lstat(path)
+    if stat.S_ISDIR(st.st_mode):
+        shutil.rmtree(path)
+    else:
+        os.unlink(path)
+
+
+def _gone(path: str) -> bool:
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def _free(home: Path) -> int:
+    try:
+        return shutil.disk_usage(home).free
+    except OSError:
+        return shutil.disk_usage("/").free
+
+
+def _stamp(t: float) -> str:
+    return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _execute(
+    entry: PlanEntry, scan: Scan, runner: Runner, brew_prefix: Path | None
+) -> tuple[str, str]:
+    """Run one entry; return (status, detail)."""
+    if entry.method == Method.TRASH:
+        assert entry.path is not None
+        result = runner([TRASH_COMMAND, entry.path])
+        if result.returncode != 0:
+            return "failed", (
+                result.stderr.strip() or f"trash exited {result.returncode}"
+            )
+        if not _gone(entry.path):
+            return "failed", "The trash command finished but the item is still there."
+        return "done", "Moved to the Trash."
+    if entry.method == Method.DELETE:
+        assert entry.path is not None
+        try:
+            delete_path(Path(entry.path))
+        except OSError as exc:
+            return "failed", f"{exc.strerror or exc}"
+        return (
+            ("done", "Deleted.")
+            if _gone(entry.path)
+            else (
+                "failed",
+                "Deleting finished but the item is still there.",
+            )
+        )
+
+    item = next((i for i in scan.items if i.id == entry.item_id), None)
+    if entry.method == Method.DOCKER_IMAGE:
+        image_id = item.details.get("image_id") if item else None
+        if not isinstance(image_id, str) or not image_id:
+            return "failed", "The scan has no image ID for this image."
+        args = ["docker", "image", "rm", image_id]
+    elif entry.method == Method.DOCKER_BUILD_CACHE:
+        args = ["docker", "builder", "prune", "--force"]
+    else:
+        if brew_prefix is None:
+            return "failed", "Homebrew is not installed."
+        brew = str(brew_prefix / "bin" / "brew")
+        if entry.method == Method.BREW_CASK:
+            args = [brew, "uninstall", "--cask", entry.name]
+        else:
+            args = [brew, "uninstall", entry.name]
+    result = runner(args)
+    if result.returncode != 0:
+        return "failed", (result.stderr.strip() or f"exited {result.returncode}")
+    return "done", "Removed."
+
+
+def write_log(result: ActionResult, plan: ActionPlan, log_dir: Path) -> Path:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    name = result.started_at.replace("-", "").replace(":", "") + ".json"
+    target = log_dir / name
+    body = {
+        **{k: v for k, v in asdict(result).items() if k != "log_path"},
+        "scan": plan.scan,
+        "refused": [asdict(r) for r in plan.refused],
+    }
+    fd, tmp = tempfile.mkstemp(dir=log_dir, prefix=".log-", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(body, f, indent=1, ensure_ascii=True, default=str)
+    os.replace(tmp, target)
+    return target
+
+
+def run_plan(
+    plan: ActionPlan,
+    scan: Scan,
+    *,
+    runner: Runner,
+    brew_prefix: Path | None,
+    log_dir: Path,
+    now: Callable[[], float] = time.time,
+) -> ActionResult:
+    """Verify and run every entry; a failure never stops the entries after it."""
+    home = Path(scan.home)
+    started = now()
+    free_before = _free(home)
+    results: list[EntryResult] = []
+    for entry in plan.entries:
+        reason = verify_entry(entry, scan, brew_prefix=brew_prefix)
+        if reason is not None:
+            status, detail = "skipped", reason
+        else:
+            try:
+                status, detail = _execute(entry, scan, runner, brew_prefix)
+            except Exception as exc:  # record it and keep going
+                status, detail = "failed", f"{type(exc).__name__}: {exc}"
+        results.append(
+            EntryResult(
+                item_id=entry.item_id,
+                name=entry.name,
+                path=entry.path,
+                method=entry.method,
+                status=status,
+                detail=detail[:DETAIL_LIMIT],
+                size_bytes=entry.size_bytes,
+            )
+        )
+    done = [r for r in results if r.status == "done"]
+    result = ActionResult(
+        plan_id=plan_id(plan),
+        permanent=plan.permanent,
+        started_at=_stamp(started),
+        finished_at=_stamp(now()),
+        results=tuple(results),
+        free_before=free_before,
+        free_after=_free(home),
+        moved_to_trash_bytes=sum(
+            r.size_bytes for r in done if r.method == Method.TRASH
+        ),
+        freed_bytes=sum(r.size_bytes for r in done if r.method in FREES_NOW),
+        log_path="",
+    )
+    log = write_log(result, plan, log_dir)
+    return ActionResult(
+        **{**asdict(result), "results": result.results, "log_path": str(log)}
+    )
