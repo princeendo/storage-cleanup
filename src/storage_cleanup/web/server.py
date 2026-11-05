@@ -3,8 +3,10 @@
 import json
 import secrets
 import sys
+import threading
 import time
 import webbrowser
+from dataclasses import asdict
 from http import HTTPStatus
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,12 +15,17 @@ from pathlib import Path
 from typing import Any, Final, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from storage_cleanup.actions.model import ActionPlan, plan_id, plan_to_json
+from storage_cleanup.actions.plan import build_plan
+from storage_cleanup.actions.run import run_plan
+from storage_cleanup.actions.trash import empty_trash
 from storage_cleanup.findings import (
     Findings,
     findings_path_for,
     parse_findings,
     validate_findings,
 )
+from storage_cleanup.scan.context import Runner, subprocess_runner
 from storage_cleanup.scan.model import JsonValue, Scan, scan_from_json
 from storage_cleanup.web.views import build_view
 
@@ -56,6 +63,14 @@ def _read_scan(path: Path) -> Scan:
 
 
 MAX_NOTED_PROBLEMS: Final = 3
+MAX_BODY_BYTES: Final = 1024 * 1024
+PERMANENT_PHRASE: Final = "delete permanently"
+EMPTY_TRASH_PHRASE: Final = "empty trash"
+POST_ROUTES: Final = {
+    "/api/plan": "_post_plan",
+    "/api/run": "_post_run",
+    "/api/empty-trash": "_post_empty_trash",
+}
 
 
 def _load_findings(
@@ -120,11 +135,20 @@ class ScanServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(
-        self, port: int, scan_path: Path, token: str, findings_path: Path | None = None
+        self,
+        port: int,
+        scan_path: Path,
+        token: str,
+        findings_path: Path | None = None,
+        runner: Runner = subprocess_runner,
+        brew_prefix: Path | None = None,
     ) -> None:
         self.scan_path = scan_path
         self.findings_path = findings_path
         self.token = token
+        self.runner = runner
+        self.brew_prefix = brew_prefix
+        self.run_lock = threading.Lock()
         super().__init__((HOST, port), _Handler)
 
     @property
@@ -189,7 +213,113 @@ class _Handler(BaseHTTPRequestHandler):
     def _not_allowed(self) -> None:
         self._send(HTTPStatus.METHOD_NOT_ALLOWED, b"This page is read-only.")
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _not_allowed
+    do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = _not_allowed
+
+    def _json(self, status: HTTPStatus, data: object) -> None:
+        body = json.dumps(data, ensure_ascii=True, default=str).encode()
+        self._send(status, body, "application/json", {"Cache-Control": "no-store"})
+
+    def do_POST(self) -> None:
+        if not self._host_ok() or not self._cookie_ok():
+            self._forbidden()
+            return
+        route = POST_ROUTES.get(urlsplit(self.path).path)
+        if route is None:
+            self._not_allowed()
+            return
+        port = self.app.port
+        origin = self.headers.get("Origin")
+        if origin not in {f"http://{HOST}:{port}", f"http://localhost:{port}"}:
+            self._forbidden()
+            return
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Send JSON.")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY_BYTES:
+            self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request too large.")
+            return
+        try:
+            body = json.loads(self.rfile.read(length) or b"null")
+        except (ValueError, RecursionError):
+            self._json(HTTPStatus.BAD_REQUEST, "Not valid JSON.")
+            return
+        if not isinstance(body, dict):
+            self._json(HTTPStatus.BAD_REQUEST, "Send a JSON object.")
+            return
+        getattr(self, route)(body)
+
+    def _plan_from(self, body: dict[str, Any]) -> ActionPlan | None:
+        ids = body.get("item_ids")
+        permanent = body.get("permanent")
+        if (
+            not isinstance(ids, list)
+            or not all(isinstance(i, str) for i in ids)
+            or not isinstance(permanent, bool)
+        ):
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                "Send item_ids (a list) and permanent (true/false).",
+            )
+            return None
+        try:
+            scan = _read_scan(self.app.scan_path)
+        except ValueError as exc:
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+            return None
+        return build_plan(scan, self.app.scan_path.name, ids, permanent=permanent)
+
+    def _post_plan(self, body: dict[str, Any]) -> None:
+        plan = self._plan_from(body)
+        if plan is not None:
+            self._json(HTTPStatus.OK, plan_to_json(plan))
+
+    def _post_run(self, body: dict[str, Any]) -> None:
+        plan = self._plan_from(body)
+        if plan is None:
+            return
+        if body.get("plan_id") != plan_id(plan):
+            self._json(HTTPStatus.CONFLICT, "The plan changed; review it again.")
+            return
+        if plan.permanent and body.get("confirm") != PERMANENT_PHRASE:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                f'Type "{PERMANENT_PHRASE}" to confirm permanent deletion.',
+            )
+            return
+        if not self.app.run_lock.acquire(blocking=False):
+            self._json(HTTPStatus.CONFLICT, "Another run is in progress.")
+            return
+        try:
+            scan = _read_scan(self.app.scan_path)
+            result = run_plan(
+                plan,
+                scan,
+                runner=self.app.runner,
+                brew_prefix=self.app.brew_prefix,
+                log_dir=self.app.scan_path.parent.parent / "actions",
+            )
+        finally:
+            self.app.run_lock.release()
+        self._json(HTTPStatus.OK, asdict(result))
+
+    def _post_empty_trash(self, body: dict[str, Any]) -> None:
+        if body.get("confirm") != EMPTY_TRASH_PHRASE:
+            self._json(
+                HTTPStatus.BAD_REQUEST, f'Type "{EMPTY_TRASH_PHRASE}" to confirm.'
+            )
+            return
+        if not self.app.run_lock.acquire(blocking=False):
+            self._json(HTTPStatus.CONFLICT, "Another run is in progress.")
+            return
+        try:
+            done, message = empty_trash(self.app.runner)
+        finally:
+            self.app.run_lock.release()
+        self._json(HTTPStatus.OK, {"ok": done, "message": message})
 
     def do_GET(self) -> None:
         if not self._host_ok():
@@ -245,15 +375,27 @@ class _Handler(BaseHTTPRequestHandler):
         )
 
 
+def detect_brew_prefix() -> Path | None:
+    for candidate in (Path("/opt/homebrew"), Path("/usr/local")):
+        if (candidate / "bin" / "brew").exists():
+            return candidate
+    return None
+
+
 def make_server(
     scan_path: Path,
     *,
     port: int = 0,
     token: str | None = None,
     findings_path: Path | None = None,
+    runner: Runner = subprocess_runner,
+    brew_prefix: Path | str | None = "detect",
 ) -> tuple[ScanServer, str]:
     token = token or secrets.token_urlsafe(32)
-    return ScanServer(port, scan_path, token, findings_path), token
+    prefix = detect_brew_prefix() if brew_prefix == "detect" else brew_prefix
+    assert prefix is None or isinstance(prefix, Path)
+    server = ScanServer(port, scan_path, token, findings_path, runner, prefix)
+    return server, token
 
 
 def page_url(server: ThreadingHTTPServer, token: str) -> str:
