@@ -1,4 +1,5 @@
 import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
+import { renderProjects } from "./projects.js";
 import { renderScatter } from "./scatter.js";
 import { renderTreemap } from "./treemap.js";
 
@@ -143,7 +144,11 @@ function scatterSection(view, onSelect) {
   draw();
 }
 
-const sections = [treemapSection, scatterSection];
+function projectsSection(view, onSelect) {
+  renderProjects($("projects-body"), view, onSelect);
+}
+
+const sections = [treemapSection, scatterSection, projectsSection];
 
 async function main() {
   document.querySelector("#detail .close").addEventListener("click", closeDetail);

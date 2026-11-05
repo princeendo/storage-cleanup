@@ -321,3 +321,25 @@ aside#detail .protected { margin-top: 14px; }
   .kpi .value { font-size: 22px; }
   .chart { height: 380px; }
 }
+
+/* Projects table */
+.projects-summary { margin: 0 0 8px; font-size: 14px; }
+.split-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 10px; }
+.split-legend .key::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.split-legend .own::before, .split-bar .own { background: var(--series-1); }
+.split-legend .regen::before, .split-bar .regen { background: var(--series-4); }
+.table-scroll { overflow-x: auto; }
+.projects-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 560px; }
+.projects-table th { text-align: left; font-weight: 500; color: var(--ink-muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--hairline); }
+.projects-table td { padding: 10px 8px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+.projects-table tbody tr { cursor: pointer; }
+.projects-table tbody tr:hover, .projects-table tbody tr:focus-visible { background: var(--wash); outline: none; }
+.projects-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.projects-table .name { max-width: 280px; }
+.project-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-cell { width: 40%; }
+.split-bar { display: flex; gap: 2px; height: 10px; }
+.split-bar span { display: block; height: 100%; border-radius: 3px; min-width: 0; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.badge { font-size: 11px; color: var(--ink-2); background: var(--wash); border-radius: 999px; padding: 1px 8px; }
+.show-all { margin-top: 12px; appearance: none; border: 0; background: var(--wash); color: var(--ink); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
