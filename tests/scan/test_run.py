@@ -86,3 +86,31 @@ def test_disk_usage_present(tmp_path: Path) -> None:
     scan = run_scan(make_ctx(tmp_path / "h"), [])
     assert scan.disk.total_bytes > 0
     assert scan.disk.free_bytes > 0
+
+
+def test_folders_containing_protected_stores_are_protected(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    (home / "Library" / "Mail").mkdir(parents=True)
+    (home / "Pictures" / "Photos Library.photoslibrary").mkdir(parents=True)
+    (home / "workspace" / "repo" / ".git").mkdir(parents=True)
+
+    def items(ctx: ScanContext) -> CollectorResult:
+        return CollectorResult(
+            items=(
+                path_item(str(ctx.home / "Library"), 1),
+                path_item(str(ctx.home / "Pictures"), 1),
+                path_item(str(ctx.home / "workspace" / "repo"), 1, kind="repo"),
+                path_item(str(ctx.home / "workspace" / "repo" / ".git"), 1),
+                path_item(str(ctx.home / "Movies"), 1),
+            )
+        )
+
+    found = {i.path: i for i in run_scan(make_ctx(home), [("items", items)]).items}
+    assert found[str(home / "Library")].protected_reason == "contains Mail"
+    assert found[str(home / "Pictures")].protected_reason == "contains Photos library"
+    assert found[str(home / "workspace" / "repo")].protected_reason is None
+    assert (
+        found[str(home / "workspace" / "repo" / ".git")].protected_reason
+        == "inside a .git folder"
+    )
+    assert found[str(home / "Movies")].protected_reason is None

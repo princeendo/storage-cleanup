@@ -69,3 +69,16 @@ def test_location_totals_use_same_rule() -> None:
     movie = path_item("/h/Downloads/movie.mov", 2 * GB, kind="file")
     linked = tuple(replace(i, location="Downloads") for i in link_tree([dl, movie]))
     assert location_totals(linked) == {"Downloads": 5 * GB}
+
+
+def test_location_totals_are_exclusive_for_nested_labels() -> None:
+    ws = replace(path_item("/h/workspace", 100), location="Workspace")
+    personal = replace(
+        path_item("/h/workspace/personal", 80), location="Your personal data"
+    )
+    repo = replace(
+        path_item("/h/workspace/personal/app", 50, kind="repo"),
+        location="Your personal data",
+    )
+    totals = location_totals(link_tree([ws, personal, repo]))
+    assert totals == {"Workspace": 20, "Your personal data": 80}

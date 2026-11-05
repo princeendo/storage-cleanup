@@ -93,7 +93,7 @@ class Scan:
 
 
 def scan_to_json(scan: Scan) -> str:
-    return json.dumps(asdict(scan), indent=1, ensure_ascii=False, sort_keys=True)
+    return json.dumps(asdict(scan), indent=1, ensure_ascii=True, sort_keys=True)
 
 
 def _item_from_dict(data: dict[str, Any]) -> Item:

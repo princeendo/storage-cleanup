@@ -5,6 +5,7 @@ import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from storage_cleanup.scan.model import Skipped
 
@@ -40,6 +41,15 @@ class _Acc:
 
 _EMPTY = Measurement(0, 0, None, None)
 
+# macOS marks online-only (cloud placeholder) folders with SF_DATALESS; listing
+# one makes the file provider fetch it over the network.
+SF_DATALESS: Final = 0x40000000
+DATALESS_REASON: Final = "online-only folder (not downloaded)"
+
+
+def _reason(exc: OSError) -> str:
+    return exc.strerror or type(exc).__name__
+
 
 def measure_tree(
     root: Path,
@@ -62,6 +72,8 @@ def measure_tree(
         return {root: _EMPTY}, ()
     except PermissionError:
         return {root: _EMPTY}, (Skipped(str(root), "no access", collector),)
+    except OSError as exc:
+        return {root: _EMPTY}, (Skipped(str(root), _reason(exc), collector),)
 
     if not stat.S_ISDIR(root_st.st_mode):
         mtime = root_st.st_mtime
@@ -80,10 +92,13 @@ def measure_tree(
         acc = dirs[current]
         try:
             entries = list(os.scandir(current))
+        except (FileNotFoundError, NotADirectoryError):
+            continue
         except PermissionError:
             skipped.append(Skipped(str(current), "no access", collector))
             continue
-        except (FileNotFoundError, NotADirectoryError):
+        except OSError as exc:
+            skipped.append(Skipped(str(current), _reason(exc), collector))
             continue
         for entry in entries:
             path = Path(entry.path)
@@ -94,10 +109,15 @@ def measure_tree(
             except PermissionError:
                 skipped.append(Skipped(str(path), "no access", collector))
                 continue
+            except OSError as exc:
+                skipped.append(Skipped(str(path), _reason(exc), collector))
+                continue
             if stat.S_ISDIR(st.st_mode):
                 if st.st_dev != device:
                     continue
                 reason = skip(path) if skip is not None else None
+                if reason is None and getattr(st, "st_flags", 0) & SF_DATALESS:
+                    reason = DATALESS_REASON
                 if reason is not None:
                     skipped.append(Skipped(str(path), reason, collector))
                     continue

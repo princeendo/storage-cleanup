@@ -103,3 +103,22 @@ def test_every_entry_is_an_item_with_type(tmp_path: Path) -> None:
 
 def test_missing_downloads_is_empty(tmp_path: Path) -> None:
     assert collect_downloads(make_ctx(tmp_path / "h")).items == ()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "archive-2023.zip",
+        "Notion-Export-2024.zip",
+        "slack-export.tar.gz",
+        "docker-volumes-backup.tar.gz",
+        "Slack-export.dmg",
+    ],
+)
+def test_exports_are_not_installers(tmp_path: Path, name: str) -> None:
+    home = tmp_path / "h"
+    for app in ("Arc", "Notion", "Slack", "Docker"):
+        make_app(home, app)
+    make_file(home / "Downloads" / name, 100)
+    [item] = collect_downloads(make_ctx(home)).items
+    assert "installer_for" not in item.details

@@ -81,3 +81,30 @@ def test_every_category_has_a_display_name() -> None:
         HOME,
     ):
         assert DISPLAY_NAMES[cat]
+
+
+def test_non_utf8_names_round_trip_and_encode() -> None:
+    item = Item(
+        id=item_id("file", "/h/bad\udcff"),
+        kind="file",
+        name="bad\udcff",
+        path="/h/bad\udcff",
+        size_bytes=1,
+        size_source=SizeSource.ALLOCATED,
+        categories=(DOWNLOADS,),
+    )
+    scan = Scan(
+        schema_version=1,
+        created_at="2026-11-05T14:20:00Z",
+        home="/h",
+        disk=DiskUsage("/", 1, 1, 0),
+        trash_bytes=0,
+        local_snapshots=(),
+        items=(item,),
+        skipped=(),
+        totals_by_category={},
+        totals_by_location={},
+    )
+    text = scan_to_json(scan)
+    text.encode("utf-8")
+    assert scan_from_json(text) == scan

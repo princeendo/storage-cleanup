@@ -87,8 +87,20 @@ def _regenerable(repo: Path) -> list[Path]:
 
 
 def _git(ctx: ScanContext, repo: Path, *args: str) -> str | None:
-    result = ctx.run(["git", "-C", str(repo), *args])
+    result = ctx.run(_git_args(repo, *args))
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _git_args(repo: Path, *args: str) -> list[str]:
+    # --no-optional-locks stops `git status` from refreshing .git/index, so the
+    # scan never writes inside a repository or blocks a concurrent commit.
+    return ["git", "--no-optional-locks", "-C", str(repo), *args]
+
+
+def _is_ignored(ctx: ScanContext, repo: Path, folder: Path) -> bool:
+    """True when git ignores ``folder``; committed folders are not regenerable."""
+    result = ctx.run(_git_args(repo, "check-ignore", "-q", "--", str(folder)))
+    return result.returncode == 0
 
 
 def collect_projects(ctx: ScanContext) -> CollectorResult:
@@ -100,6 +112,8 @@ def collect_projects(ctx: ScanContext) -> CollectorResult:
             skipped.extend(sk)
             regenerable_bytes = 0
             for folder in _regenerable(repo):
+                if not _is_ignored(ctx, repo, folder):
+                    continue
                 rm, rsk = measure(folder, collector=COLLECTOR)
                 skipped.extend(rsk)
                 regenerable_bytes += rm.size_bytes

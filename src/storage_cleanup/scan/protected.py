@@ -3,6 +3,8 @@
 import os
 from pathlib import PurePath
 
+GIT_REASON = "inside a .git folder"
+
 _SYSTEM_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("/", "system"),
     ("/", "bin"),
@@ -19,6 +21,14 @@ _HOME_STORES: tuple[tuple[tuple[str, ...], str], ...] = (
     (("library", "keychains"), "Keychains"),
     (("library", "mobile documents"), "iCloud Drive"),
 )
+
+
+_HOME_STORE_NAMES: dict[tuple[str, ...], tuple[str, ...]] = {
+    ("library", "mail"): ("Library", "Mail"),
+    ("library", "messages"): ("Library", "Messages"),
+    ("library", "keychains"): ("Library", "Keychains"),
+    ("library", "mobile documents"): ("Library", "Mobile Documents"),
+}
 
 
 def _parts(path: PurePath) -> tuple[str, ...]:
@@ -50,5 +60,28 @@ def protected_reason(path: PurePath, home: PurePath) -> str | None:
     ) or _starts_with(parts, ("/", "volumes", ".timemachine")):
         return "Time Machine"
     if ".git" in parts:
-        return "inside a .git folder"
+        return GIT_REASON
+    return None
+
+
+def home_store_paths(home: PurePath) -> list[tuple[PurePath, str]]:
+    """The fixed protected stores under ``home``, with their reasons."""
+    base = PurePath(os.path.abspath(home))
+    stores: list[tuple[PurePath, str]] = []
+    for store, reason in _HOME_STORES:
+        stores.append((base.joinpath(*_HOME_STORE_NAMES[store]), reason))
+    return stores
+
+
+def containing_reason(path: PurePath, stores: list[tuple[PurePath, str]]) -> str | None:
+    """Return ``"contains <store>"`` when a protected store sits inside ``path``.
+
+    A ``.git`` folder does not count: a whole repository may be archived or
+    trashed as one unit (spec section 9, Colin's decision).
+    """
+    parts = _parts(path)
+    for store, reason in stores:
+        store_parts = _parts(store)
+        if len(store_parts) > len(parts) and store_parts[: len(parts)] == parts:
+            return f"contains {reason}"
     return None

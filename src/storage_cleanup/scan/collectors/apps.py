@@ -55,16 +55,26 @@ class AppBundle:
 
 
 def find_app_bundles(app_dirs: Sequence[Path]) -> list[AppBundle]:
-    """List top-level ``*.app`` bundles with their Info.plist facts."""
-    bundles: list[AppBundle] = []
+    """List ``*.app`` bundles, including one vendor folder deep, with plist facts."""
+    candidates: list[Path] = []
     for directory in app_dirs:
         try:
             entries = sorted(directory.iterdir())
         except OSError:
             continue
         for path in entries:
-            if path.suffix != ".app" or not path.is_dir():
-                continue
+            if path.suffix == ".app":
+                candidates.append(path)
+            elif path.is_dir() and not path.is_symlink():
+                try:
+                    candidates.extend(
+                        sorted(p for p in path.iterdir() if p.suffix == ".app")
+                    )
+                except OSError:
+                    continue
+    bundles: list[AppBundle] = []
+    for path in candidates:
+        if path.is_dir():
             bundle_id: str | None = None
             version: str | None = None
             try:
@@ -78,6 +88,17 @@ def find_app_bundles(app_dirs: Sequence[Path]) -> list[AppBundle]:
                 pass
             bundles.append(AppBundle(path, path.stem, bundle_id, version))
     return bundles
+
+
+def _owner_by_prefix(key: str, by_id: dict[str, AppBundle]) -> AppBundle | None:
+    """Match helper data such as ``com.vendor.app.ShipIt`` to ``com.vendor.app``."""
+    best: AppBundle | None = None
+    for bundle_id, bundle in by_id.items():
+        if key.startswith(bundle_id + ".") and (
+            best is None or len(bundle_id) > len(best.bundle_id or "")
+        ):
+            best = bundle
+    return best
 
 
 def _last_opened(ctx: ScanContext, path: Path) -> tuple[AgeSignal, float] | None:
@@ -136,7 +157,7 @@ def collect_apps(ctx: ScanContext) -> CollectorResult:
             continue
         for entry in entries:
             key = entry.name.removesuffix(_SAVED_STATE).lower()
-            owner = by_id.get(key) or by_name.get(key)
+            owner = by_id.get(key) or by_name.get(key) or _owner_by_prefix(key, by_id)
             is_leftover = (
                 owner is None
                 and dirname in LEFTOVER_DIRS

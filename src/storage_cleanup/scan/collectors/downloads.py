@@ -76,12 +76,8 @@ def _zip_apps(path: Path) -> set[str]:
 
 
 def _installer_for(path: Path, kind: str, apps: dict[str, str]) -> str | None:
-    if kind not in ("installer", "archive"):
-        return None
-    normalized = normalize_app_name(path.name)
-    for app_norm, app_name in apps.items():
-        if app_norm and normalized.startswith(app_norm):
-            return app_name
+    if kind == "installer":
+        return apps.get(normalize_app_name(path.name))
     if path.suffix.lower() == ".zip":
         for bundle in _zip_apps(path):
             match = apps.get(normalize_app_name(bundle))

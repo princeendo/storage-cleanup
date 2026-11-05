@@ -1,10 +1,11 @@
 """Run every collector and assemble one scan."""
 
+import os
 import shutil
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from storage_cleanup.scan.aggregate import category_totals, link_tree, location_totals
 from storage_cleanup.scan.collectors.ai_tools import collect_ai_tools
@@ -26,7 +27,12 @@ from storage_cleanup.scan.model import (
     Scan,
     Skipped,
 )
-from storage_cleanup.scan.protected import protected_reason
+from storage_cleanup.scan.protected import (
+    GIT_REASON,
+    containing_reason,
+    home_store_paths,
+    protected_reason,
+)
 
 DEFAULT_COLLECTORS: tuple[tuple[str, Collector], ...] = (
     ("home", collect_home),
@@ -42,18 +48,37 @@ DEFAULT_COLLECTORS: tuple[tuple[str, Collector], ...] = (
 
 
 def finalize_items(items: Sequence[Item], home: Path) -> tuple[Item, ...]:
-    """Link the tree, then label each path item's location and protection."""
+    """Link the tree, then label each path item's location and protection.
+
+    A folder that contains a protected store (Mail, a Photos library, and so
+    on) is protected as a whole, so it can never be removed in one piece.
+    """
+    linked = link_tree(items)
+    stores = _protected_stores(linked, home)
     finished: list[Item] = []
-    for item in link_tree(items):
+    for item in linked:
         if item.path is not None:
             path = Path(item.path)
+            reason = protected_reason(path, home) or containing_reason(path, stores)
             item = replace(
-                item,
-                location=location_label(path, home),
-                protected_reason=protected_reason(path, home),
+                item, location=location_label(path, home), protected_reason=reason
             )
         finished.append(item)
     return tuple(finished)
+
+
+def _protected_stores(items: Sequence[Item], home: Path) -> list[tuple[PurePath, str]]:
+    """Protected stores that exist: fixed ones, Photos libraries, scanned ones."""
+    stores = [(p, r) for p, r in home_store_paths(home) if os.path.lexists(p)]
+    for library in sorted((home / "Pictures").glob("*.photoslibrary")):
+        stores.append((library, "Photos library"))
+    for item in items:
+        if item.path is None:
+            continue
+        reason = protected_reason(Path(item.path), home)
+        if reason is not None and reason != GIT_REASON:
+            stores.append((PurePath(item.path), reason))
+    return stores
 
 
 def _trash(ctx: ScanContext) -> tuple[int | None, tuple[Skipped, ...]]:

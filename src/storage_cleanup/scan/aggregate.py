@@ -98,5 +98,34 @@ def category_totals(items: Sequence[Item]) -> dict[str, int]:
 
 
 def location_totals(items: Sequence[Item]) -> dict[str, int]:
-    """Sum sizes per location label with the same no-double-counting rule."""
-    return _totals(items, lambda i: (i.location,) if i.location else ())
+    """Sum sizes per location label so that labels partition the disk.
+
+    An item counts toward its label unless an ancestor already has that label.
+    When a label sits inside a folder with a different label (for example
+    "Your personal data" inside "Workspace"), its size is taken out of the
+    outer label so the two never add up to more than is on disk.
+    """
+    by_id = {i.id: i for i in items}
+    totals: dict[str, int] = {}
+    for item in items:
+        label = item.location
+        if not label:
+            continue
+        outer: str | None = None
+        ancestor_id = item.parent_id
+        seen: set[str] = set()
+        while ancestor_id is not None and ancestor_id not in seen:
+            seen.add(ancestor_id)
+            ancestor = by_id.get(ancestor_id)
+            if ancestor is None:
+                break
+            if ancestor.location:
+                outer = ancestor.location
+                break
+            ancestor_id = ancestor.parent_id
+        if outer == label:
+            continue
+        totals[label] = totals.get(label, 0) + item.size_bytes
+        if outer is not None:
+            totals[outer] = totals.get(outer, 0) - item.size_bytes
+    return totals

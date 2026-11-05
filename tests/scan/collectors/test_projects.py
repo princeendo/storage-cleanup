@@ -1,8 +1,9 @@
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from storage_cleanup.scan.collectors.projects import collect_projects
-from storage_cleanup.scan.context import subprocess_runner
+from storage_cleanup.scan.context import CommandResult, subprocess_runner
 from storage_cleanup.scan.model import AgeSignal, Item
 from tests.helpers import make_ctx, make_file
 
@@ -27,6 +28,7 @@ def make_repo(path: Path) -> Path:
     path.mkdir(parents=True)
     git(path, "init", "-q")
     make_file(path / "README.md", 100)
+    (path / ".gitignore").write_text("node_modules/\ntarget/\n__pycache__/\n")
     git(path, "add", ".")
     git(path, "commit", "-q", "-m", "init")
     return path
@@ -99,3 +101,29 @@ def test_repo_without_commits_uses_mtime(tmp_path: Path) -> None:
 
 def test_no_workspace_is_empty(tmp_path: Path) -> None:
     assert items_for(tmp_path / "h") == ()
+
+
+def test_committed_build_folder_is_not_regenerable(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    repo = make_repo(home / "workspace" / "action")
+    make_file(repo / "dist" / "index.js", 2 * MIB)
+    git(repo, "add", "dist")
+    git(repo, "commit", "-q", "-m", "dist")
+    make_file(repo / "build" / "out.o", 2 * MIB)
+    regenerable = [i for i in items_for(home) if i.kind == "regenerable"]
+    assert regenerable == []
+
+
+def test_git_runs_without_optional_locks(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    make_repo(home / "workspace" / "app")
+    calls: list[tuple[str, ...]] = []
+
+    def recording(args: Sequence[str]) -> CommandResult:
+        calls.append(tuple(args))
+        return subprocess_runner(args)
+
+    collect_projects(make_ctx(home, recording))
+    git_calls = [c for c in calls if c[0] == "git"]
+    assert git_calls
+    assert all("--no-optional-locks" in c for c in git_calls)

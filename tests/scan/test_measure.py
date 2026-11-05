@@ -136,3 +136,62 @@ def test_newest_and_oldest_mtime(tmp_path: Path) -> None:
     m, _ = measure(root, collector="t")
     assert m.oldest_mtime == 1000
     assert m.newest_mtime == 2000
+
+
+def test_other_os_errors_are_skipped_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    bad_dir = root / "deep"
+    bad_file = make_file(root / "flaky", 10)
+    make_file(bad_dir / "x", 10)
+    make_file(root / "kept", 10)
+    real_scandir, real_lstat = os.scandir, os.lstat
+
+    def scandir(path: os.PathLike[str] | str) -> object:
+        if Path(path) == bad_dir:
+            raise OSError(63, "File name too long")
+        return real_scandir(path)
+
+    def lstat(path: os.PathLike[str] | str) -> os.stat_result:
+        if Path(path) == bad_file:
+            raise OSError(5, "Input/output error")
+        return real_lstat(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    monkeypatch.setattr(os, "lstat", lstat)
+    m, skipped = measure(root, collector="t")
+    assert m.file_count == 1
+    assert sorted((s.path, s.reason) for s in skipped) == [
+        (str(bad_dir), "File name too long"),
+        (str(bad_file), "Input/output error"),
+    ]
+
+
+class _Dataless:
+    def __init__(self, real: os.stat_result) -> None:
+        self._real = real
+        self.st_flags = real.st_flags | 0x40000000
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._real, name)
+
+
+def test_online_only_folders_are_not_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    online = root / "iCloud folder"
+    make_file(online / "x", 10)
+    real_lstat = os.lstat
+
+    def lstat(path: os.PathLike[str] | str) -> object:
+        st = real_lstat(path)
+        return _Dataless(st) if Path(path) == online else st
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    m, skipped = measure(root, collector="t")
+    assert m.file_count == 0
+    assert [(s.path, s.reason) for s in skipped] == [
+        (str(online), "online-only folder (not downloaded)")
+    ]

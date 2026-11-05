@@ -7,6 +7,8 @@ from storage_cleanup.scan.collectors.apps import collect_apps, find_app_bundles
 from storage_cleanup.scan.model import AgeSignal, Item
 from tests.helpers import FakeRunner, make_ctx, make_file, ok
 
+MIB = 1024**2
+
 
 def make_app(apps: Path, name: str, bundle_id: str, version: str = "1.0") -> Path:
     bundle = apps / f"{name}.app"
@@ -113,3 +115,24 @@ def test_containers_respect_privacy_rule(tmp_path: Path) -> None:
     assert by_kind(collect_apps(make_ctx(home)).items, "app-data") == []
     opted = collect_apps(make_ctx(home, include_app_data=True))
     assert len(by_kind(opted.items, "app-data")) == 1
+
+
+def test_helper_data_of_installed_app_is_not_leftover(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    make_app(home / "Applications", "Slack", "com.tinyspeck.slackmacgap")
+    make_file(
+        home / "Library" / "Caches" / "com.tinyspeck.slackmacgap.ShipIt" / "c", 2 * MIB
+    )
+    [item] = by_kind(collect_apps(make_ctx(home)).items, "app-data")
+    assert item.categories == ("app-data",)
+    assert item.details["owner_bundle_id"] == "com.tinyspeck.slackmacgap"
+
+
+def test_apps_in_vendor_folders_are_found(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    make_app(home / "Applications" / "Adobe", "Photoshop", "com.adobe.Photoshop")
+    make_file(home / "Library" / "Caches" / "com.adobe.Photoshop" / "c", 2 * MIB)
+    result = collect_apps(make_ctx(home))
+    assert [i.name for i in by_kind(result.items, "app")] == ["Photoshop"]
+    [data] = by_kind(result.items, "app-data")
+    assert data.categories == ("app-data",)
