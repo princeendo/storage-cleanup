@@ -2,8 +2,8 @@
 
 A tool for finding what is using disk space on a Mac and reclaiming it safely.
 
-The project is at an early stage: the read-only scanner works; the web page,
-agent playbook, and cleanup actions come next. See `TASKS.md` and the design in
+The project is at an early stage: the read-only scanner and the local page
+work; the agent playbook and cleanup actions come next. See `TASKS.md` and the design in
 `docs/superpowers/specs/2026-11-05-storage-explorer-design.md`.
 
 ## Principles
@@ -75,6 +75,23 @@ Desktop. Allowing that is enough; the tool never asks for Full Disk Access.
 Anything it cannot read is listed as skipped in the scan file, including the
 Trash (macOS blocks reading it without Full Disk Access).
 
+## Viewing a scan
+
+```bash
+uv run storage-cleanup serve
+```
+
+This opens the latest scan in your browser as a local page: headline numbers,
+a "where your disk went" treemap you can drill into (by category or by
+location), a "big and forgotten" chart of size against age, and the space
+your git projects spend on rebuildable folders such as `node_modules`.
+
+- The page is read-only. It changes nothing on disk.
+- It listens only on this Mac (`127.0.0.1`) and needs the private link that
+  `serve` prints; other web pages and programs cannot read it.
+- `--scan FILE` shows a specific scan, `--port N` picks the port, and
+  `--no-open` prints the link without opening a browser.
+
 ## Development
 
 ```bash
@@ -95,3 +112,9 @@ uv run mypy
 
 Agents also read `local_agent_guidance.md` (machine-local, not committed) for
 git identity and personal preferences.
+
+## Third-party code
+
+| Library | Version | License | Where | Why |
+| --- | --- | --- | --- | --- |
+| [Apache ECharts](https://echarts.apache.org/) | 5.6.0 | Apache-2.0 (`ECHARTS_LICENSE`, `ECHARTS_NOTICE`) | `src/storage_cleanup/web/static/vendor/` | Treemap, scatter, and drill-down charts on the local page. Vendored so the page works offline; approved by Colin on 2026-11-05 (design section 10). Its SHA-256 is pinned in `storage_cleanup/web/__init__.py` and checked by a test. |

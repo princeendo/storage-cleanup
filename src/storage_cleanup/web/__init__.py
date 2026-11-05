@@ -1,0 +1,4 @@
+"""The local, read-only web page."""
+
+ECHARTS_VERSION = "5.6.0"
+ECHARTS_SHA256 = "bf4a223524e40b77c304bec67e1222cf551f14880cf42c69dc046558e11c07b1"

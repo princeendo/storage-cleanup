@@ -28,3 +28,6 @@ local_agent_guidance.md
 
 # Brainstorming mockups (local only)
 .superpowers/
+
+# Local preview launch configs (machine-specific paths)
+.claude/launch.json
