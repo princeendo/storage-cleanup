@@ -225,3 +225,17 @@ def test_recent_project_and_docker_image_are_not_recommended() -> None:
         rule_recommendations(scan_of([repo, regen, image, used], used=10 * GIB), NOW)
         == []
     )
+
+
+def test_leftover_data_in_recent_use_is_not_recommended() -> None:
+    recent = aged(
+        path_item(
+            "/h/Library/Caches/com.microsoft.SyncReporter",
+            50 * MIB,
+            ("leftover-app-data",),
+            kind="app-data",
+            details={"guessed_owner": "com.microsoft.SyncReporter"},
+        ),
+        3,
+    )
+    assert rule_recommendations(scan_of([recent], used=10 * GIB), NOW) == []

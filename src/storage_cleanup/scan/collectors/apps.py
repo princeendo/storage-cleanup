@@ -42,6 +42,7 @@ LEFTOVER_DIRS: Final = frozenset(
     }
 )
 LEFTOVER_MIN_BYTES: Final = 1024**2
+_PLAUSIBLE_SINCE: Final = 946_684_800.0  # 2000-01-01 UTC
 _REVERSE_DNS: Final = re.compile(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+){2,}")
 _SAVED_STATE: Final = ".savedState"
 
@@ -197,9 +198,14 @@ def collect_apps(ctx: ScanContext) -> CollectorResult:
         age = _last_opened(ctx, bundle.path)
         if age is None:
             try:
-                age = (AgeSignal.LAST_MODIFIED, os.lstat(bundle.path).st_mtime)
+                mtime = os.lstat(bundle.path).st_mtime
             except OSError:
-                age = None
+                mtime = 0.0
+            # Some installers stamp bundles with placeholder dates (1980, 1984);
+            # those say nothing about use, so treat them as unknown.
+            age = (
+                (AgeSignal.LAST_MODIFIED, mtime) if mtime >= _PLAUSIBLE_SINCE else None
+            )
         items.append(
             Item(
                 id=item_id(ItemKind.APP, str(bundle.path)),

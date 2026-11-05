@@ -94,6 +94,7 @@ def compact(item: Item, now: float) -> dict[str, JsonValue]:
         "path": item.path,
         "name": item.name,
         "protected": item.protected_reason,
+        "details": dict(item.details),
     }
 
 

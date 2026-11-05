@@ -156,3 +156,22 @@ def test_inspect_summary_cli(
     path = write_scan(tmp_path)
     assert main(["inspect", "--scan", str(path), "--summary"]) == 0
     assert "Disk:" in capsys.readouterr().out
+
+
+def test_json_rows_include_details(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    session = path_item(
+        "/h/.claude/projects/-gone",
+        MIB,
+        ("ai-tooling",),
+        kind="ai-sessions",
+        details={"cwd": "/gone", "cwd_exists": False},
+    )
+    path = tmp_path / "scan.json"
+    path.write_text(scan_to_json(scan_of([session], used=GIB)))
+    assert (
+        main(["inspect", "--scan", str(path), "--kind", "ai-sessions", "--json"]) == 0
+    )
+    [row] = json.loads(capsys.readouterr().out)
+    assert row["details"] == {"cwd": "/gone", "cwd_exists": False}

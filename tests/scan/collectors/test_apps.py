@@ -58,11 +58,11 @@ def test_bundle_size_version_and_last_opened(tmp_path: Path) -> None:
 def test_mdls_null_falls_back_to_mtime(tmp_path: Path) -> None:
     home = tmp_path / "h"
     app = make_app(home / "Applications", "Old", "com.example.old")
-    os.utime(app, (1000, 1000))
+    os.utime(app, (1_700_000_000, 1_700_000_000))
     runner = FakeRunner({mdls(app): ok("(null)")})
     [item] = by_kind(collect_apps(make_ctx(home, runner)).items, "app")
     assert item.age_signal is AgeSignal.LAST_MODIFIED
-    assert item.age_timestamp == 1000
+    assert item.age_timestamp == 1_700_000_000
 
 
 def test_app_data_matched_by_bundle_id_and_name(tmp_path: Path) -> None:
@@ -136,3 +136,13 @@ def test_apps_in_vendor_folders_are_found(tmp_path: Path) -> None:
     assert [i.name for i in by_kind(result.items, "app")] == ["Photoshop"]
     [data] = by_kind(result.items, "app-data")
     assert data.categories == ("app-data",)
+
+
+def test_installer_placeholder_dates_are_unknown(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    app = make_app(home / "Applications", "Dropbox", "com.getdropbox.dropbox")
+    os.utime(app, (315532800, 315532800))  # 1980-01-01, set by some installers
+    runner = FakeRunner({mdls(app): ok("(null)")})
+    [item] = by_kind(collect_apps(make_ctx(home, runner)).items, "app")
+    assert item.age_signal is None
+    assert item.age_timestamp is None

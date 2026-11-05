@@ -12,6 +12,7 @@ ACTIONS: Final = frozenset({"delete", "archive"})
 _MIN_LOG2: Final = 12  # 4 KiB scores nothing
 _MAX_LOG2: Final = 35  # 32 GiB and up gets the full size factor
 _STALE_DAYS: Final = 180
+_IN_USE_DAYS: Final = 30
 _DAY: Final = 86_400.0
 
 
@@ -109,6 +110,9 @@ def rule_recommendations(scan: Scan, now: float) -> list[Recommendation]:
                 f"exists ({_text(d.get('cwd'))})."
             )
         if LEFTOVER_APP_DATA in item.categories:
+            age = _age_days(item, now)
+            if age is not None and age < _IN_USE_DAYS:
+                return None  # something still writes here: probably not leftover
             return 0.5, (
                 f"Data left by {_text(d.get('guessed_owner'))}, which is no longer "
                 "installed."
