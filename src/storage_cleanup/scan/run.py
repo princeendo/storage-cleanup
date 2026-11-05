@@ -9,11 +9,13 @@ from pathlib import Path
 from storage_cleanup.scan.aggregate import category_totals, link_tree, location_totals
 from storage_cleanup.scan.collectors.ai_tools import collect_ai_tools
 from storage_cleanup.scan.collectors.apps import collect_apps
+from storage_cleanup.scan.collectors.dev_caches import collect_dev_caches
 from storage_cleanup.scan.collectors.docker import collect_docker
 from storage_cleanup.scan.collectors.downloads import collect_downloads
 from storage_cleanup.scan.collectors.home import collect_home
 from storage_cleanup.scan.collectors.homebrew import collect_homebrew
 from storage_cleanup.scan.collectors.packages import collect_packages
+from storage_cleanup.scan.collectors.projects import collect_projects
 from storage_cleanup.scan.context import Collector, ScanContext
 from storage_cleanup.scan.locations import location_label
 from storage_cleanup.scan.measure import measure
@@ -34,6 +36,8 @@ DEFAULT_COLLECTORS: tuple[tuple[str, Collector], ...] = (
     ("homebrew", collect_homebrew),
     ("packages", collect_packages),
     ("docker", collect_docker),
+    ("dev-caches", collect_dev_caches),
+    ("projects", collect_projects),
 )
 
 
