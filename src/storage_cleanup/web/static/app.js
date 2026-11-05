@@ -1,4 +1,5 @@
 import { formatAge, formatBytes, formatDate } from "./format.js";
+import { renderTreemap } from "./treemap.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -120,7 +121,22 @@ function closeDetail() {
 }
 
 // Each section draws itself from the view; onSelect opens the detail panel.
-const sections = [];
+function treemapSection(view, onSelect) {
+  const buttons = [...document.querySelectorAll("#where [data-lens]")];
+  let lens = "categories";
+  const draw = () => renderTreemap($("treemap"), view, lens, onSelect);
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      lens = button.dataset.lens;
+      for (const b of buttons) b.setAttribute("aria-pressed", String(b === button));
+      draw();
+    });
+  }
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  draw();
+}
+
+const sections = [treemapSection];
 
 async function main() {
   document.querySelector("#detail .close").addEventListener("click", closeDetail);

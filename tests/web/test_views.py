@@ -82,7 +82,7 @@ def test_exclusive_sizes() -> None:
 
 
 def test_category_tree_partitions_used_space() -> None:
-    tree = category_tree(scan_of([LIB, BREW, DL, CLAUDE, PROJ]))
+    tree = category_tree(scan_of([LIB, BREW, DL, CLAUDE, PROJ]), small_min_bytes=0)
     assert tree.name == "Disk used"
     assert tree.value == 300
     values = {c.group: c.value for c in tree.children}
@@ -317,3 +317,13 @@ def test_build_view_empty_scan() -> None:
     assert view["projects"] == []
     tree = json.loads(json.dumps(view["categories"]))
     assert [c["kind"] for c in tree["children"]] == ["system"]
+
+
+def test_small_top_level_groups_are_grouped() -> None:
+    big = path_item("/h/Movies", 100 * GIB)
+    tiny = [path_item(f"/h/.t{i}", MIB) for i in range(5)]
+    tree = location_tree(scan_of([big, *tiny], used=200 * GIB))
+    kinds = [(c.kind, c.name) for c in tree.children]
+    assert ("smaller", "5 smaller items") in kinds
+    assert kinds[-1][0] == "system"
+    assert sum(c.value for c in tree.children) == 200 * GIB

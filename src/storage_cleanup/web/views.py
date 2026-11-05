@@ -134,7 +134,7 @@ def _group_small(node: TreeNode, small_min_bytes: int) -> None:
     threshold = max(small_min_bytes, SMALL_FRACTION * node.value)
     small = [c for c in node.children if c.value < threshold and c.kind != "system"]
     if len(small) >= 2:
-        kept = [c for c in node.children if c not in small]
+        kept = [c for c in node.children if c not in small and c.kind != "system"]
         kept.append(
             TreeNode(
                 id=f"smaller:{node.id}",
@@ -144,6 +144,7 @@ def _group_small(node: TreeNode, small_min_bytes: int) -> None:
                 group=node.group,
             )
         )
+        kept.extend(c for c in node.children if c.kind == "system")
         node.children = kept
     for child in node.children:
         _group_small(child, small_min_bytes)
@@ -208,8 +209,7 @@ def _partition(
         )
     )
     root = TreeNode("root", "Disk used", used, "group", "", children=group_nodes)
-    for child in root.children:
-        _group_small(child, small_min_bytes)
+    _group_small(root, small_min_bytes)
     return root
 
 

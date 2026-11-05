@@ -55,7 +55,7 @@ def request(
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     headers = {"Host": host or f"127.0.0.1:{port}"}
     if cookie is not None:
-        headers["Cookie"] = f"{TOKEN_COOKIE}={cookie}"
+        headers["Cookie"] = f"{TOKEN_COOKIE}_{port}={cookie}"
     conn.request(method, path, headers=headers)
     return conn.getresponse()
 
@@ -70,7 +70,7 @@ def test_token_link_sets_cookie_and_redirects(server: ThreadingHTTPServer) -> No
     assert resp.status == 302
     assert resp.getheader("Location") == "/"
     cookie = resp.getheader("Set-Cookie") or ""
-    assert f"{TOKEN_COOKIE}={TOKEN}" in cookie
+    assert f"{TOKEN_COOKIE}_{server.server_address[1]}={TOKEN}" in cookie
     assert "HttpOnly" in cookie
     assert "SameSite=Strict" in cookie
 
@@ -199,3 +199,9 @@ def test_dropped_connections_are_quiet(
         resp.close()
     request(server, "/").read()
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_cookie_name_is_per_port(server: ThreadingHTTPServer) -> None:
+    port = server.server_address[1]
+    resp = request(server, f"/?token={TOKEN}", cookie=None)
+    assert (resp.getheader("Set-Cookie") or "").startswith(f"{TOKEN_COOKIE}_{port}=")

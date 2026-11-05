@@ -62,6 +62,11 @@ class ScanServer(ThreadingHTTPServer):
     def port(self) -> int:
         return int(self.server_address[1])
 
+    @property
+    def cookie_name(self) -> str:
+        # Browsers share cookies across ports, so two servers need two names.
+        return f"{TOKEN_COOKIE}_{self.port}"
+
     def handle_error(self, request: Any, client_address: Any) -> None:
         # A browser that closes the connection early is normal; stay quiet.
         if isinstance(sys.exception(), ConnectionError):
@@ -107,7 +112,7 @@ class _Handler(BaseHTTPRequestHandler):
             cookie = SimpleCookie(self.headers.get("Cookie", ""))
         except CookieError:
             return False
-        morsel = cookie.get(TOKEN_COOKIE)
+        morsel = cookie.get(self.app.cookie_name)
         return morsel is not None and secrets.compare_digest(
             morsel.value.encode(), self.app.token.encode()
         )
@@ -126,7 +131,7 @@ class _Handler(BaseHTTPRequestHandler):
             given = parse_qs(url.query)["token"][0]
             if secrets.compare_digest(given.encode(), self.app.token.encode()):
                 cookie = (
-                    f"{TOKEN_COOKIE}={self.app.token}; "
+                    f"{self.app.cookie_name}={self.app.token}; "
                     "HttpOnly; SameSite=Strict; Path=/"
                 )
                 self._send(
