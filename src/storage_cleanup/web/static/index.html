@@ -4,8 +4,70 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Storage Explorer</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/vendor/echarts.min.js"></script>
+<script type="module" src="/static/app.js"></script>
 </head>
 <body>
-<h1>Storage Explorer</h1>
+<div class="wrap">
+  <header class="top">
+    <h1>Storage Explorer</h1>
+    <div class="meta" id="scan-meta"></div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" aria-selected="true">Overview</button>
+    <button role="tab" aria-selected="false" disabled>Recommendations<span class="soon">coming soon</span></button>
+    <button role="tab" aria-selected="false" disabled>Archive<span class="soon">coming soon</span></button>
+    <button role="tab" aria-selected="false" disabled>Delete<span class="soon">coming soon</span></button>
+  </nav>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main id="overview">
+    <div class="kpis" id="kpis"></div>
+
+    <section class="card" id="where">
+      <div class="card-head">
+        <div>
+          <h2>Where your disk went</h2>
+          <p class="lede">Every box is measured space; nothing is counted twice. Click a box to look inside.</p>
+        </div>
+        <div class="segmented" role="group" aria-label="Lens">
+          <button type="button" data-lens="categories" aria-pressed="true">By category</button>
+          <button type="button" data-lens="locations" aria-pressed="false">By location</button>
+        </div>
+      </div>
+      <div class="chart" id="treemap"></div>
+    </section>
+
+    <section class="card" id="zone">
+      <h2>Big and forgotten</h2>
+      <p class="lede">Each dot is an app, tool, or folder. Further right is older, higher is bigger. The shaded corner is where the easy space is.</p>
+      <div class="chart short" id="scatter"></div>
+    </section>
+
+    <section class="card" id="projects">
+      <h2>Dead weight in your projects</h2>
+      <p class="lede">Your files compared with folders that tools can rebuild, such as <code>node_modules</code> and <code>.venv</code>.</p>
+      <div id="projects-body"></div>
+    </section>
+  </main>
+</div>
+
+<aside id="detail" aria-hidden="true">
+  <button class="icon-button close" type="button" aria-label="Close details">×</button>
+  <h3 id="detail-name"></h3>
+  <div class="path" id="detail-path"></div>
+  <dl id="detail-facts"></dl>
+</aside>
+
+<dialog id="skipped">
+  <header>
+    <h3>Skipped paths</h3>
+    <button class="icon-button" type="button" aria-label="Close">×</button>
+  </header>
+  <ul id="skipped-list"></ul>
+</dialog>
 </body>
 </html>

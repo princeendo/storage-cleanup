@@ -189,7 +189,7 @@ def serve(scan_path: Path, *, port: int = 0, open_browser: bool = True) -> None:
     url = page_url(server, token)
     print(f"Storage Explorer is showing {scan_path}")
     print(f"Open this link (it only works on this Mac):\n  {url}")
-    print("Press Ctrl-C to stop.")
+    print("Press Ctrl-C to stop.", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
