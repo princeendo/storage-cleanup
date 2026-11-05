@@ -2,8 +2,8 @@
 
 A tool for finding what is using disk space on a Mac and reclaiming it safely.
 
-The project is at an early stage: the read-only scanner works; the web page,
-agent playbook, and cleanup actions come next. See `TASKS.md` and the design in
+The project is at an early stage: the read-only scanner and the local page
+work; the agent playbook and cleanup actions come next. See `TASKS.md` and the design in
 `docs/superpowers/specs/2026-11-05-storage-explorer-design.md`.
 
 ## Principles
@@ -74,6 +74,23 @@ macOS may ask once whether your terminal can access Downloads, Documents, or
 Desktop. Allowing that is enough; the tool never asks for Full Disk Access.
 Anything it cannot read is listed as skipped in the scan file, including the
 Trash (macOS blocks reading it without Full Disk Access).
+
+## Viewing a scan
+
+```bash
+uv run storage-cleanup serve
+```
+
+This opens the latest scan in your browser as a local page: headline numbers,
+a "where your disk went" treemap you can drill into (by category or by
+location), a "big and forgotten" chart of size against age, and the space
+your git projects spend on rebuildable folders such as `node_modules`.
+
+- The page is read-only. It changes nothing on disk.
+- It listens only on this Mac (`127.0.0.1`) and needs the private link that
+  `serve` prints; other web pages and programs cannot read it.
+- `--scan FILE` shows a specific scan, `--port N` picks the port, and
+  `--no-open` prints the link without opening a browser.
 
 ## Development
 
