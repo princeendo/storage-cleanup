@@ -8,6 +8,7 @@ from pathlib import Path
 
 from storage_cleanup.scan.aggregate import category_totals, link_tree, location_totals
 from storage_cleanup.scan.collectors.apps import collect_apps
+from storage_cleanup.scan.collectors.downloads import collect_downloads
 from storage_cleanup.scan.collectors.home import collect_home
 from storage_cleanup.scan.context import Collector, ScanContext
 from storage_cleanup.scan.locations import location_label
@@ -24,6 +25,7 @@ from storage_cleanup.scan.protected import protected_reason
 DEFAULT_COLLECTORS: tuple[tuple[str, Collector], ...] = (
     ("home", collect_home),
     ("apps", collect_apps),
+    ("downloads", collect_downloads),
 )
 
 
