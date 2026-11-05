@@ -6,14 +6,17 @@ import threading
 from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from storage_cleanup.findings import findings_path_for
 from storage_cleanup.scan.model import scan_to_json
 from storage_cleanup.web import ECHARTS_SHA256
 from storage_cleanup.web.server import (
     TOKEN_COOKIE,
     load_scan,
+    load_view,
     make_server,
     page_url,
     static_dir,
@@ -235,3 +238,102 @@ def test_api_view_answers_500_with_message(
     resp = request(server, "/api/view")
     assert resp.status == 500
     assert b"Cannot read scan" in resp.read()
+
+
+MOVIES = path_item("/h/Movies", 100)
+
+
+def write_pair(tmp_path: Path, **overrides: Any) -> tuple[Path, Path]:
+    scan_path = tmp_path / "reports" / "scans" / "S.json"
+    scan_path.parent.mkdir(parents=True)
+    scan_path.write_text(scan_to_json(scan_of([MOVIES])))
+    findings = {
+        "schema_version": 1,
+        "scan": "S.json",
+        "created_at": "2026-11-05T23:00:00Z",
+        "agent": "Test agent",
+        "headlines": [{"title": "Movies", "body": "100 B.", "item_ids": [MOVIES.id]}],
+        "categories": [],
+        "recommendations": [
+            {
+                "item_id": MOVIES.id,
+                "action": "archive",
+                "confidence": 0.7,
+                "reason": "Old.",
+            }
+        ],
+    }
+    findings.update(overrides)
+    findings_path = findings_path_for(scan_path)
+    findings_path.parent.mkdir(parents=True)
+    findings_path.write_text(json.dumps(findings))
+    return scan_path, findings_path
+
+
+def test_view_includes_matching_findings(tmp_path: Path) -> None:
+    scan_path, _ = write_pair(tmp_path)
+    view: Any = load_view(scan_path, 0.0)
+    assert view["findings"]["agent"] == "Test agent"
+    assert view["findings_note"] is None
+    assert [r["source"] for r in view["recommendations"]] == ["agent"]
+
+
+def test_view_without_findings_file(tmp_path: Path) -> None:
+    scan_path, findings_path = write_pair(tmp_path)
+    findings_path.unlink()
+    view: Any = load_view(scan_path, 0.0)
+    assert view["findings"] is None
+    assert view["findings_note"] is None
+
+
+def test_stale_findings_are_noted_not_shown(tmp_path: Path) -> None:
+    scan_path, _ = write_pair(tmp_path, scan="other.json")
+    view: Any = load_view(scan_path, 0.0)
+    assert view["findings"] is None
+    assert view["findings_note"] == (
+        "Agent findings were not shown: These findings are for scan other.json, "
+        "not S.json."
+    )
+
+
+def test_invalid_findings_are_noted_not_shown(tmp_path: Path) -> None:
+    bad = [
+        {"item_id": f"x:{i}", "action": "delete", "confidence": 1, "reason": "r"}
+        for i in range(5)
+    ]
+    scan_path, _ = write_pair(tmp_path, recommendations=bad)
+    view: Any = load_view(scan_path, 0.0)
+    assert view["findings"] is None
+    note = view["findings_note"]
+    assert note.startswith("Agent findings were not shown: Unknown item ID: x:0")
+    assert note.endswith("and 2 more.")
+
+
+def test_unreadable_findings_are_noted(tmp_path: Path) -> None:
+    scan_path, findings_path = write_pair(tmp_path)
+    findings_path.write_text("{oops")
+    view: Any = load_view(scan_path, 0.0)
+    assert view["findings"] is None
+    assert view["findings_note"].startswith(
+        "Agent findings were not shown: Not valid JSON"
+    )
+
+
+def test_findings_reread_per_request(tmp_path: Path) -> None:
+    scan_path, findings_path = write_pair(tmp_path)
+    srv, _ = make_server(scan_path, token=TOKEN, findings_path=findings_path)
+    thread = threading.Thread(
+        target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    try:
+        first = json.loads(request(srv, "/api/view").read())
+        findings_path.write_text(
+            findings_path.read_text().replace("Test agent", "Other")
+        )
+        second = json.loads(request(srv, "/api/view").read())
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert first["findings"]["agent"] == "Test agent"
+    assert second["findings"]["agent"] == "Other"

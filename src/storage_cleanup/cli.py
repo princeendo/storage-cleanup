@@ -97,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--no-open", action="store_true", help="Print the link; don't open a browser."
     )
+    serve.add_argument(
+        "--findings",
+        type=Path,
+        help="Agent findings file (default: the one named after the scan).",
+    )
     inspect = commands.add_parser(
         "inspect", help="Ask focused questions about a scan (for agents)."
     )
@@ -231,7 +236,15 @@ def _serve(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
-    serve(scan_path, port=args.port, open_browser=not args.no_open)
+    if args.findings is not None and not args.findings.is_file():
+        print(f"Cannot read findings {args.findings}: no such file.", file=sys.stderr)
+        return 2
+    serve(
+        scan_path,
+        port=args.port,
+        open_browser=not args.no_open,
+        findings_path=args.findings,
+    )
     return 0
 
 

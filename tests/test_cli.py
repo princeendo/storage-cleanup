@@ -89,3 +89,19 @@ def test_cli_serve_corrupt_scan_exits_2(
     bad.write_text("{oops")
     assert main(["serve", "--no-open", "--scan", str(bad)]) == 2
     assert f"Cannot read scan {bad}" in capsys.readouterr().err
+
+
+def test_cli_serve_findings_flag_missing_file_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from storage_cleanup.scan.model import scan_to_json
+    from tests.web.test_views import scan_of
+
+    scan_path = tmp_path / "scan.json"
+    scan_path.write_text(scan_to_json(scan_of([])))
+    missing = tmp_path / "nope.json"
+    code = main(
+        ["serve", "--no-open", "--scan", str(scan_path), "--findings", str(missing)]
+    )
+    assert code == 2
+    assert f"Cannot read findings {missing}" in capsys.readouterr().err
