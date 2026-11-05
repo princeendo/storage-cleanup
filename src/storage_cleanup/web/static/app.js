@@ -1,5 +1,6 @@
 import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
 import { renderProjects } from "./projects.js";
+import { renderRecommendations } from "./recommendations.js";
 import { renderScatter } from "./scatter.js";
 import { renderTreemap } from "./treemap.js";
 
@@ -215,7 +216,11 @@ function projectsSection(view, onSelect) {
   renderProjects($("projects-body"), view, onSelect);
 }
 
-const sections = [findingsSection, treemapSection, scatterSection, projectsSection];
+function recommendationsSection(view, onSelect) {
+  renderRecommendations($("recs-body"), view, onSelect);
+}
+
+const sections = [findingsSection, treemapSection, scatterSection, projectsSection, recommendationsSection];
 
 async function main() {
   for (const button of document.querySelectorAll("nav.tabs [data-tab]")) {

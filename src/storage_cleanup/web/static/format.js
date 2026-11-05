@@ -57,5 +57,6 @@ const AGE_LABELS = {
 // "Last opened 3 months ago", "Installed 2.1 years ago".
 export function describeAge(signal, days) {
   const label = AGE_LABELS[signal] ?? "Last used";
-  return days === null || days === undefined ? `${label}: unknown` : `${label} ${formatAge(days)} ago`;
+  if (days === null || days === undefined) return `${label}: unknown`;
+  return days < 1 ? `${label} today` : `${label} ${formatAge(days)} ago`;
 }
