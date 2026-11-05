@@ -1,0 +1,38 @@
+[project]
+name = "storage-cleanup"
+version = "0.1.0"
+description = "Find and safely reclaim disk space on macOS"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Colin" }]
+dependencies = []
+
+[project.scripts]
+storage-cleanup = "storage_cleanup.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "ruff>=0.11",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]

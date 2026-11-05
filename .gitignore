@@ -1,0 +1,27 @@
+# Python and uv
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+local/
+
+# Scan output can contain real file paths from this machine; keep it local
+reports/
+
+# Per-machine agent guidance (user preferences, identity); never committed
+local_agent_guidance.md
