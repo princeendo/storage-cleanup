@@ -8,14 +8,18 @@ work; the agent playbook and cleanup actions come next. See `TASKS.md` and the d
 
 ## Principles
 
-- **Report first.** Commands show what they found and change nothing unless you
-  ask them to.
-- **Trash, not delete.** Anything removed goes to the Trash, so you can put it
-  back.
-- **Only known-safe locations.** The tool removes things only from locations it
-  knows regenerate (caches, build output) or that you pick yourself. System
-  folders, Photos, Mail, iCloud Drive, Keychains, and Time Machine are never
-  touched.
+- **Report first.** Scanning and the page change nothing until you confirm a
+  removal.
+- **Trash by default.** Removed files and folders go to the Trash, so you can
+  put them back. Permanent deletion and Empty Trash each need a typed
+  confirmation.
+- **You choose, the tool checks.** Rules and agents only recommend. The tool
+  acts only on items you queued and confirmed, and checks each one again just
+  before acting.
+- **Protected things stay put.** System folders, Photos, Mail, Messages, iCloud
+  Drive, Keychains, Time Machine data, anything inside `.git`, and any folder
+  that contains one of these are never removed. Docker volumes are never
+  removed.
 - **No `sudo`.** The tool runs as you and skips anything it cannot read.
 
 ## Requirements

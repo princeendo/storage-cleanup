@@ -33,32 +33,53 @@ acts in the page.
 
 ## Safety Rules for the Tool
 
-These rules describe how the tool itself must behave.
+These rules describe how the tool itself must behave. They follow section 9 of
+the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.md`).
 
-1. **Report first.** By default every command only reports what it found. It
-   changes nothing on disk.
-2. **Trash, not delete.** Removal moves items to the user's Trash
-   (`~/.Trash`) so they can be restored. Permanent deletion (`unlink`,
-   `rmtree`, `rm`) never happens by default. If it is added later, it needs its
-   own explicit flag and its own confirmation.
-3. **Confirm before acting.** Before removing anything, show the user every
-   path, its size, and the total, and wait for confirmation. A `--yes` flag may
-   skip the prompt only when the user passes it.
-4. **Allowlist, not denylist.** A cleaner only touches paths it knows are safe
-   to remove (caches, build output, old downloads the user picks). Unknown paths
-   are reported, never removed.
-5. **Protected paths are never removed**, even if a rule matches them:
+1. **Report first.** `scan`, `inspect`, `findings`, and the page's views only
+   report. Nothing changes on disk until the user confirms a removal.
+2. **Trash by default.** Files and folders move to the Trash with macOS's
+   `/usr/bin/trash`, so Finder's "Put Back" works. **Permanent deletion** is an
+   explicit per-run choice with its own second confirmation (the user types
+   `delete permanently`). **Empty Trash** is permanent too and has its own typed
+   confirmation (`empty trash`).
+3. **Archive** (build step 5) copies an item to the homelab, verifies
+   checksums on both ends, and only then moves the local copy to the Trash.
+4. **Confirm an exact plan.** Before acting, the page shows every path, its
+   size, how it will be removed, how to undo it, any warnings, every refusal,
+   and the totals. The server rebuilds the plan itself and acts only if it
+   matches the plan the user reviewed.
+5. **Recommend narrowly, act only on what the user chose.** The tool
+   recommends only through built-in rules or validated agent findings. It acts
+   only on items present in the scan that the user queued and confirmed.
+   Unknown paths are never acted on automatically.
+6. **Re-verify before every action.** Immediately before acting, the item must
+   still exist, still be the same kind of thing, be about the measured size,
+   lie under the home folder, `/Applications`, or the Homebrew prefix, and not
+   be protected. Anything that fails is skipped with a reason, never forced.
+   Symlinks are never followed.
+7. **Protected paths are never removed**, whatever a rule, finding, or user
+   selection says:
    - System locations: `/System`, `/bin`, `/sbin`, `/usr` (except
      `/usr/local`), `/private/var/db`, `/Library/Apple`.
    - User data stores: Photos libraries, Mail, Messages, Keychains,
      `~/Library/Mobile Documents` (iCloud Drive), and Time Machine backups or
      local snapshots.
    - Anything inside a `.git` directory.
-6. **No elevated rights.** Do not use `sudo` or ask for Full Disk Access. If a
-   path needs either, report it and skip it.
-7. **Measure, don't guess.** Report sizes that were measured on disk (allocated
-   blocks), not estimates. Record before and after free space for any real
-   cleanup.
+   - Any folder that *contains* one of the stores above. A whole repository
+     (a folder containing `.git`) may be archived or trashed as one unit; the
+     review warns when it has uncommitted or unpushed work.
+   - Docker volumes are report-only.
+8. **No elevated rights.** Do not use `sudo` or ask for Full Disk Access. If a
+   path needs either, report it and skip it. Empty Trash goes through Finder
+   and may show a one-time macOS Automation prompt; the tool never changes
+   that setting itself.
+9. **Local server safety.** The page listens only on `127.0.0.1`, needs the
+   per-session token, rejects foreign `Host` headers, and accepts changes only
+   as JSON `POST` requests with a matching `Origin`. One run at a time.
+10. **Measure, don't guess, and keep a record.** Sizes are allocated blocks on
+    disk. Every run records free space before and after and writes a log under
+    `reports/actions/`.
 
 ## Safety Rules for Agents
 
