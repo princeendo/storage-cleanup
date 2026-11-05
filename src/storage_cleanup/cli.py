@@ -13,6 +13,7 @@ from storage_cleanup.scan.context import ScanContext, subprocess_runner
 from storage_cleanup.scan.model import Scan, scan_from_json
 from storage_cleanup.scan.run import run_scan
 from storage_cleanup.scan.store import latest_scan, merge_items, write_scan
+from storage_cleanup.web.server import load_scan, serve
 
 GIB = 1024**3
 
@@ -74,7 +75,37 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "--into", type=Path, help="Scan file to add to (default: the latest)."
     )
+    serve = commands.add_parser(
+        "serve", help="Show a scan in a local, read-only web page."
+    )
+    serve.add_argument("--scan", type=Path, help="Scan file (default: the latest).")
+    serve.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("reports/scans"),
+        help="Where to look for the latest scan (default: reports/scans).",
+    )
+    serve.add_argument(
+        "--port", type=int, default=0, help="Port (default: any free port)."
+    )
+    serve.add_argument(
+        "--no-open", action="store_true", help="Print the link; don't open a browser."
+    )
     return parser
+
+
+def _serve(args: argparse.Namespace) -> int:
+    scan_path = args.scan or latest_scan(args.output_dir)
+    if scan_path is None:
+        print('No scan found. Run "storage-cleanup scan" first.', file=sys.stderr)
+        return 2
+    try:
+        load_scan(scan_path)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    serve(scan_path, port=args.port, open_browser=not args.no_open)
+    return 0
 
 
 def _gib(size: int) -> str:
@@ -132,5 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "scan":
         return _scan(args)
+    if args.command == "serve":
+        return _serve(args)
     parser.print_help()
     return 0

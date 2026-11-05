@@ -72,3 +72,20 @@ def test_cli_targeted_without_scan_exits_2(
     code = main(["scan", "--path", str(fake_home), "--output-dir", str(tmp_path / "x")])
     assert code == 2
     assert 'No scan found. Run "storage-cleanup scan" first.' in capsys.readouterr().err
+
+
+def test_cli_serve_without_scan_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["serve", "--no-open", "--output-dir", str(tmp_path / "none")])
+    assert code == 2
+    assert 'No scan found. Run "storage-cleanup scan" first.' in capsys.readouterr().err
+
+
+def test_cli_serve_corrupt_scan_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("{oops")
+    assert main(["serve", "--no-open", "--scan", str(bad)]) == 2
+    assert f"Cannot read scan {bad}" in capsys.readouterr().err
