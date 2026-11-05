@@ -2,6 +2,7 @@
 
 import json
 import secrets
+import sys
 import time
 import webbrowser
 from http import HTTPStatus
@@ -60,6 +61,12 @@ class ScanServer(ThreadingHTTPServer):
     @property
     def port(self) -> int:
         return int(self.server_address[1])
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        # A browser that closes the connection early is normal; stay quiet.
+        if isinstance(sys.exception(), ConnectionError):
+            return
+        super().handle_error(request, client_address)
 
 
 class _Handler(BaseHTTPRequestHandler):

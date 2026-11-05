@@ -1,3 +1,4 @@
+import hashlib
 import http.client
 import json
 import re
@@ -9,7 +10,14 @@ from pathlib import Path
 import pytest
 
 from storage_cleanup.scan.model import scan_to_json
-from storage_cleanup.web.server import TOKEN_COOKIE, load_scan, make_server, page_url
+from storage_cleanup.web import ECHARTS_SHA256
+from storage_cleanup.web.server import (
+    TOKEN_COOKIE,
+    load_scan,
+    make_server,
+    page_url,
+    static_dir,
+)
 from tests.helpers import path_item
 from tests.web.test_views import scan_of
 
@@ -166,3 +174,28 @@ def test_load_scan_rejects_bad_files(tmp_path: Path, content: str) -> None:
 def test_load_scan_rejects_missing_file(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match=re.escape("missing.json")):
         load_scan(tmp_path / "missing.json")
+
+
+def test_vendored_echarts_is_pinned() -> None:
+    vendor = static_dir() / "vendor"
+    script = (vendor / "echarts.min.js").read_bytes()
+    assert hashlib.sha256(script).hexdigest() == ECHARTS_SHA256
+    assert b"Licensed to the Apache Software Foundation" in script[:2000]
+    assert "Apache License" in (vendor / "ECHARTS_LICENSE").read_text()
+    assert (vendor / "ECHARTS_NOTICE").exists()
+
+
+def test_vendored_echarts_is_served(server: ThreadingHTTPServer) -> None:
+    resp = request(server, "/static/vendor/echarts.min.js")
+    assert resp.status == 200
+    assert resp.getheader("Content-Type", "").startswith("text/javascript")
+
+
+def test_dropped_connections_are_quiet(
+    server: ThreadingHTTPServer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for _ in range(3):
+        resp = request(server, "/static/vendor/echarts.min.js")
+        resp.close()
+    request(server, "/").read()
+    assert "Traceback" not in capsys.readouterr().err

@@ -95,3 +95,9 @@ uv run mypy
 
 Agents also read `local_agent_guidance.md` (machine-local, not committed) for
 git identity and personal preferences.
+
+## Third-party code
+
+| Library | Version | License | Where | Why |
+| --- | --- | --- | --- | --- |
+| [Apache ECharts](https://echarts.apache.org/) | 5.6.0 | Apache-2.0 (`ECHARTS_LICENSE`, `ECHARTS_NOTICE`) | `src/storage_cleanup/web/static/vendor/` | Treemap, scatter, and drill-down charts on the local page. Vendored so the page works offline; approved by Colin on 2026-11-05 (design section 10). Its SHA-256 is pinned in `storage_cleanup/web/__init__.py` and checked by a test. |
