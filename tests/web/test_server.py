@@ -21,7 +21,7 @@ from storage_cleanup.web.server import (
     page_url,
     static_dir,
 )
-from tests.helpers import make_file, path_item
+from tests.helpers import FakeRunner, make_file, path_item
 from tests.web.test_views import scan_of
 
 TOKEN = "t0k3n-for-tests"
@@ -36,7 +36,7 @@ def scan_file(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def server(scan_file: Path) -> Iterator[ThreadingHTTPServer]:
-    srv, _ = make_server(scan_file, token=TOKEN)
+    srv, _ = make_server(scan_file, token=TOKEN, runner=FakeRunner(), brew_prefix=None)
     thread = threading.Thread(
         target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
     )
@@ -552,3 +552,47 @@ def test_post_to_unknown_path_is_405(sandbox: Any) -> None:
     srv, _, _, _ = sandbox
     status, _ = post(srv, "/api/view", {})
     assert status == 405
+
+
+def test_run_errors_come_back_as_json(
+    sandbox: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from storage_cleanup.web import server as server_mod
+
+    srv, _, files, _ = sandbox
+    ids = ids_of(srv, files[:1])
+    _, plan = post(srv, "/api/plan", {"item_ids": ids, "permanent": False})
+
+    def boom(*args: object, **kwargs: object) -> object:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(server_mod, "run_plan", boom)
+    body = {
+        "item_ids": ids,
+        "permanent": False,
+        "plan_id": plan["plan_id"],
+        "confirm": None,
+    }
+    status, message = post(srv, "/api/run", body)
+    assert status == 500
+    assert message.startswith("The run stopped unexpectedly")
+    assert not srv.run_lock.locked()
+
+
+def test_logs_stay_beside_a_scan_outside_reports(tmp_path: Path) -> None:
+    from storage_cleanup.web.server import action_log_dir
+
+    assert action_log_dir(tmp_path / "reports" / "scans" / "S.json") == (
+        tmp_path / "reports" / "actions"
+    )
+    assert action_log_dir(tmp_path / "x.json") == tmp_path / "actions"
+
+
+def test_server_uses_the_no_terminal_runner_by_default(scan_file: Path) -> None:
+    from storage_cleanup.actions.run import action_runner
+
+    srv, _ = make_server(scan_file, token=TOKEN)
+    try:
+        assert srv.runner is action_runner
+    finally:
+        srv.server_close()

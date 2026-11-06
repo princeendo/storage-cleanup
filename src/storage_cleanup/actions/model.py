@@ -62,7 +62,11 @@ def plan_id(plan: ActionPlan) -> str:
     body = {
         "scan": plan.scan,
         "permanent": plan.permanent,
-        "entries": sorted([e.item_id, e.method.value] for e in plan.entries),
+        # Path and size too: an in-place targeted rescan must invalidate a review.
+        "entries": sorted(
+            [e.item_id, e.method.value, e.path or "", e.size_bytes]
+            for e in plan.entries
+        ),
     }
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 

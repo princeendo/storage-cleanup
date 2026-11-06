@@ -29,12 +29,20 @@ function button(text, className, onClick) {
 }
 
 async function post(url, body) {
-  const response = await fetch(url, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    return {
+      status: 0,
+      data: `Could not reach the page's server (${error.message}). If a run was in progress, its log in reports/actions shows what was done.`,
+    };
+  }
   let data = null;
   try {
     data = await response.json();

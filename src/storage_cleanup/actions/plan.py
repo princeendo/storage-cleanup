@@ -1,6 +1,7 @@
 """Turn the user's queue into an exact plan, refusing what may not be removed."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from storage_cleanup.actions.model import (
     FREES_NOW,
@@ -9,9 +10,11 @@ from storage_cleanup.actions.model import (
     PlanEntry,
     Refusal,
 )
+from storage_cleanup.actions.verify import allowed_roots
 from storage_cleanup.scan.model import Item, ItemKind, Scan
 
 NOT_REMOVABLE = "Not removable from the page."
+OUTSIDE_ROOTS = "Outside the folders this tool may change."
 VOLUME_REASON = (
     "Docker volumes can hold data that cannot be recreated; remove them with "
     "Docker yourself."
@@ -80,8 +83,23 @@ def _ancestor_in(item: Item, by_id: dict[str, Item], wanted: set[str]) -> Item |
     return None
 
 
+def _outside_roots(item: Item, scan: Scan, brew_prefix: Path | None) -> bool:
+    if item.path is None:
+        return False
+    path = Path(item.path)
+    return not any(
+        path != root and path.is_relative_to(root)
+        for root in allowed_roots(scan, brew_prefix)
+    )
+
+
 def build_plan(
-    scan: Scan, scan_name: str, item_ids: Sequence[str], *, permanent: bool
+    scan: Scan,
+    scan_name: str,
+    item_ids: Sequence[str],
+    *,
+    permanent: bool,
+    brew_prefix: Path | None = None,
 ) -> ActionPlan:
     """The exact plan for these items: entries to act on, and refusals with reasons."""
     by_id = {i.id: i for i in scan.items}
@@ -116,6 +134,11 @@ def build_plan(
         method = removal_method(item, permanent)
         if method is None:
             refused.append(Refusal(item_id, item.name, NOT_REMOVABLE))
+            continue
+        if method in (Method.TRASH, Method.DELETE) and _outside_roots(
+            item, scan, brew_prefix
+        ):
+            refused.append(Refusal(item_id, item.name, OUTSIDE_ROOTS))
             continue
         candidates.append((item, method))
 

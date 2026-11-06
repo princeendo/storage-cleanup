@@ -178,3 +178,28 @@ def test_plan_json_has_id_and_entries() -> None:
     assert data["plan_id"] == plan_id(plan)
     assert data["permanent"] is False
     assert isinstance(data["entries"], list) and isinstance(data["refused"], list)
+
+
+def test_plan_id_changes_when_a_size_changes() -> None:
+    a = build_plan(scan(), "S.json", [FILE.id], permanent=False)
+    bigger = replace(FILE, size_bytes=40 * GIB)
+    s = scan_of([bigger, FOLDER], used=100 * GIB)
+    b = build_plan(s, "S.json", [FILE.id], permanent=False)
+    assert plan_id(a) != plan_id(b)
+
+
+def test_roots_and_paths_outside_them_are_refused_at_plan_time() -> None:
+    home = path_item("/h", 10 * GIB)
+    apps = path_item("/Applications", GIB)
+    elsewhere = path_item("/Volumes/USB/stuff", GIB)
+    s = scan_of([home, apps, elsewhere, FILE, FORMULA], used=100 * GIB)
+    plan = build_plan(
+        s,
+        "S.json",
+        [home.id, apps.id, elsewhere.id, FILE.id, FORMULA.id],
+        permanent=False,
+    )
+    reasons = {r.item_id: r.reason for r in plan.refused}
+    outside = "Outside the folders this tool may change."
+    assert reasons == {home.id: outside, apps.id: outside, elsewhere.id: outside}
+    assert {e.item_id for e in plan.entries} == {FILE.id, FORMULA.id}

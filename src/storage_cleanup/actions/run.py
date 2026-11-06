@@ -2,11 +2,13 @@
 
 import json
 import os
+import re
 import shutil
 import stat
+import subprocess
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,12 +21,15 @@ from storage_cleanup.actions.model import (
     PlanEntry,
     plan_id,
 )
-from storage_cleanup.actions.verify import verify_entry
-from storage_cleanup.scan.context import Runner
+from storage_cleanup.actions.verify import recheck_path, verify_entry
+from storage_cleanup.scan.context import CommandResult, Runner
 from storage_cleanup.scan.model import Scan
 
 TRASH_COMMAND: Final = "/usr/bin/trash"
 DETAIL_LIMIT: Final = 300
+ACTION_TIMEOUT_SECONDS: Final = 900
+_PACKAGE_NAME: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@._+-]*$")
+_SUDO_HINTS: Final = ("sudo:", "a terminal is required", "password is required")
 
 
 @dataclass(frozen=True)
@@ -52,8 +57,27 @@ class ActionResult:
     log_path: str
 
 
+def action_runner(args: Sequence[str]) -> CommandResult:
+    """Run a removal command with no terminal, so nothing can ask for a password."""
+    try:
+        done = subprocess.run(
+            list(args),
+            text=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            timeout=ACTION_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        return CommandResult(127, "", str(exc))
+    except subprocess.TimeoutExpired:
+        return CommandResult(124, "", "timed out")
+    return CommandResult(done.returncode, done.stdout, done.stderr)
+
+
 def delete_path(path: Path) -> None:
-    """Permanently remove a file, link, or folder. Links are removed, never followed."""
+    """Permanently remove a file or folder. Links are removed, never followed."""
     st = os.lstat(path)
     if stat.S_ISDIR(st.st_mode):
         shutil.rmtree(path)
@@ -80,71 +104,83 @@ def _stamp(t: float) -> str:
     return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _command_failure(result: CommandResult, entry: PlanEntry) -> str:
+    error = result.stderr.strip() or f"exited {result.returncode}"
+    if any(hint in error for hint in _SUDO_HINTS):
+        flag = "--cask " if entry.method == Method.BREW_CASK else ""
+        return (
+            "Needs administrator rights. Uninstall it in Terminal with: "
+            f"brew uninstall {flag}{entry.name}"
+        )
+    return error
+
+
 def _execute(
     entry: PlanEntry, scan: Scan, runner: Runner, brew_prefix: Path | None
 ) -> tuple[str, str]:
     """Run one entry; return (status, detail)."""
-    if entry.method == Method.TRASH:
+    if entry.method in (Method.TRASH, Method.DELETE):
         assert entry.path is not None
-        result = runner([TRASH_COMMAND, entry.path])
-        if result.returncode != 0:
-            return "failed", (
-                result.stderr.strip() or f"trash exited {result.returncode}"
-            )
-        if not _gone(entry.path):
-            return "failed", "The trash command finished but the item is still there."
-        return "done", "Moved to the Trash."
-    if entry.method == Method.DELETE:
-        assert entry.path is not None
+        reason = recheck_path(entry.path)  # nothing may have changed since verify
+        if reason is not None:
+            return "skipped", reason
+        if entry.method == Method.TRASH:
+            result = runner([TRASH_COMMAND, entry.path])
+            if result.returncode != 0:
+                return "failed", _command_failure(result, entry)
+            if not _gone(entry.path):
+                return (
+                    "failed",
+                    "The trash command finished but the item is still there.",
+                )
+            return "done", "Moved to the Trash."
         try:
             delete_path(Path(entry.path))
         except OSError as exc:
-            return "failed", f"{exc.strerror or exc}"
-        return (
-            ("done", "Deleted.")
-            if _gone(entry.path)
-            else (
-                "failed",
-                "Deleting finished but the item is still there.",
-            )
-        )
+            return "failed", f"{exc.strerror or exc}. Part of it may already be gone."
+        if not _gone(entry.path):
+            return "failed", "Deleting finished but the item is still there."
+        return "done", "Deleted."
 
     item = next((i for i in scan.items if i.id == entry.item_id), None)
     if entry.method == Method.DOCKER_IMAGE:
         image_id = item.details.get("image_id") if item else None
-        if not isinstance(image_id, str) or not image_id:
-            return "failed", "The scan has no image ID for this image."
-        args = ["docker", "image", "rm", image_id]
+        if not isinstance(image_id, str) or not _PACKAGE_NAME.match(
+            image_id.replace(":", "")
+        ):
+            return "failed", "The scan has no usable image ID for this image."
+        args = ["docker", "image", "rm", "--", image_id]
     elif entry.method == Method.DOCKER_BUILD_CACHE:
         args = ["docker", "builder", "prune", "--force"]
     else:
         if brew_prefix is None:
             return "failed", "Homebrew is not installed."
+        if not _PACKAGE_NAME.match(entry.name):
+            return "failed", f"Unexpected package name {entry.name!r}."
         brew = str(brew_prefix / "bin" / "brew")
-        if entry.method == Method.BREW_CASK:
-            args = [brew, "uninstall", "--cask", entry.name]
-        else:
-            args = [brew, "uninstall", entry.name]
+        kind = "--cask" if entry.method == Method.BREW_CASK else "--formula"
+        args = [brew, "uninstall", kind, entry.name]
     result = runner(args)
     if result.returncode != 0:
-        return "failed", (result.stderr.strip() or f"exited {result.returncode}")
+        return "failed", _command_failure(result, entry)
     return "done", "Removed."
 
 
-def write_log(result: ActionResult, plan: ActionPlan, log_dir: Path) -> Path:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    name = result.started_at.replace("-", "").replace(":", "") + ".json"
-    target = log_dir / name
-    body = {
-        **{k: v for k, v in asdict(result).items() if k != "log_path"},
-        "scan": plan.scan,
-        "refused": [asdict(r) for r in plan.refused],
-    }
-    fd, tmp = tempfile.mkstemp(dir=log_dir, prefix=".log-", suffix=".tmp")
+def _log_path(log_dir: Path, started: float) -> Path:
+    stamp = datetime.fromtimestamp(started, UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    target = log_dir / f"{stamp}.json"
+    counter = 1
+    while target.exists():
+        target = log_dir / f"{stamp}-{counter}.json"
+        counter += 1
+    return target
+
+
+def _write_log(target: Path, body: dict[str, object]) -> None:
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".log-", suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(body, f, indent=1, ensure_ascii=True, default=str)
     os.replace(tmp, target)
-    return target
 
 
 def run_plan(
@@ -156,20 +192,44 @@ def run_plan(
     log_dir: Path,
     now: Callable[[], float] = time.time,
 ) -> ActionResult:
-    """Verify and run every entry; a failure never stops the entries after it."""
+    """Verify and run every entry; a failure never stops the entries after it.
+
+    The log is written before the first action and rewritten after each one,
+    so an interrupted run still leaves a record of what happened.
+    """
     home = Path(scan.home)
     started = now()
     free_before = _free(home)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log = _log_path(log_dir, started)
     results: list[EntryResult] = []
+
+    def record(state: str) -> None:
+        _write_log(
+            log,
+            {
+                "state": state,
+                "plan_id": plan_id(plan),
+                "scan": plan.scan,
+                "permanent": plan.permanent,
+                "started_at": _stamp(started),
+                "free_before": free_before,
+                "entries": [asdict(e) for e in plan.entries],
+                "refused": [asdict(r) for r in plan.refused],
+                "results": [asdict(r) for r in results],
+            },
+        )
+
+    record("running")
     for entry in plan.entries:
-        reason = verify_entry(entry, scan, brew_prefix=brew_prefix)
-        if reason is not None:
-            status, detail = "skipped", reason
-        else:
-            try:
+        try:
+            reason = verify_entry(entry, scan, brew_prefix=brew_prefix)
+            if reason is not None:
+                status, detail = "skipped", reason
+            else:
                 status, detail = _execute(entry, scan, runner, brew_prefix)
-            except Exception as exc:  # record it and keep going
-                status, detail = "failed", f"{type(exc).__name__}: {exc}"
+        except Exception as exc:  # record it and keep going
+            status, detail = "failed", f"{type(exc).__name__}: {exc}"
         results.append(
             EntryResult(
                 item_id=entry.item_id,
@@ -181,6 +241,8 @@ def run_plan(
                 size_bytes=entry.size_bytes,
             )
         )
+        record("running")
+
     done = [r for r in results if r.status == "done"]
     result = ActionResult(
         plan_id=plan_id(plan),
@@ -194,9 +256,7 @@ def run_plan(
             r.size_bytes for r in done if r.method == Method.TRASH
         ),
         freed_bytes=sum(r.size_bytes for r in done if r.method in FREES_NOW),
-        log_path="",
+        log_path=str(log),
     )
-    log = write_log(result, plan, log_dir)
-    return ActionResult(
-        **{**asdict(result), "results": result.results, "log_path": str(log)}
-    )
+    _write_log(log, {"state": "finished", **asdict(result), "scan": plan.scan})
+    return result

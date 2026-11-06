@@ -56,8 +56,11 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
 6. **Re-verify before every action.** Immediately before acting, the item must
    still exist, still be the same kind of thing, be about the measured size,
    lie under the home folder, `/Applications`, or the Homebrew prefix, and not
-   be protected. Anything that fails is skipped with a reason, never forced.
-   Symlinks are never followed.
+   be protected. No folder in its path may have become a link, and it must not
+   contain a protected store at any depth, another mounted disk, or online-only
+   cloud files. Links themselves are skipped, never followed. Anything that
+   fails is skipped with a reason, never forced. The path checks repeat in the
+   instant before acting.
 7. **Protected paths are never removed**, whatever a rule, finding, or user
    selection says:
    - System locations: `/System`, `/bin`, `/sbin`, `/usr` (except

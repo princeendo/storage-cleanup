@@ -115,9 +115,10 @@ Nothing is removed until you confirm an exact plan.
    never removed.
 4. **Check and run.** Just before acting, each item is checked again. It must
    still exist, be about the scanned size, lie inside your home folder,
-   `/Applications`, or Homebrew's folder, and not be (or contain) anything
-   protected. Anything that fails is skipped with the reason. Links are never
-   followed.
+   `/Applications`, or Homebrew's folder, and not be (or contain, at any
+   depth) anything protected. Folders that hold another mounted disk or
+   online-only iCloud files are skipped, and so are links (they are never
+   followed). Anything that fails is skipped with the reason.
 5. **Results.** You see what was done, skipped, or failed, the space moved to
    the Trash (freed once you empty it) and freed now, and free space before
    and after. A log is written to `reports/actions/`. Run a new scan to refresh

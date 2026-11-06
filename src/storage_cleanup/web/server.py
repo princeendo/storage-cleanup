@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from storage_cleanup.actions.model import ActionPlan, plan_id, plan_to_json
 from storage_cleanup.actions.plan import build_plan
-from storage_cleanup.actions.run import run_plan
+from storage_cleanup.actions.run import action_runner, run_plan
 from storage_cleanup.actions.trash import empty_trash
 from storage_cleanup.findings import (
     Findings,
@@ -25,7 +25,7 @@ from storage_cleanup.findings import (
     parse_findings,
     validate_findings,
 )
-from storage_cleanup.scan.context import Runner, subprocess_runner
+from storage_cleanup.scan.context import Runner
 from storage_cleanup.scan.model import JsonValue, Scan, scan_from_json
 from storage_cleanup.web.views import build_view
 
@@ -140,7 +140,7 @@ class ScanServer(ThreadingHTTPServer):
         scan_path: Path,
         token: str,
         findings_path: Path | None = None,
-        runner: Runner = subprocess_runner,
+        runner: Runner = action_runner,
         brew_prefix: Path | None = None,
     ) -> None:
         self.scan_path = scan_path
@@ -270,7 +270,13 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
             return None
-        return build_plan(scan, self.app.scan_path.name, ids, permanent=permanent)
+        return build_plan(
+            scan,
+            self.app.scan_path.name,
+            ids,
+            permanent=permanent,
+            brew_prefix=self.app.brew_prefix,
+        )
 
     def _post_plan(self, body: dict[str, Any]) -> None:
         plan = self._plan_from(body)
@@ -300,8 +306,15 @@ class _Handler(BaseHTTPRequestHandler):
                 scan,
                 runner=self.app.runner,
                 brew_prefix=self.app.brew_prefix,
-                log_dir=self.app.scan_path.parent.parent / "actions",
+                log_dir=action_log_dir(self.app.scan_path),
             )
+        except Exception as exc:  # the page must always get an answer
+            self._json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                f"The run stopped unexpectedly ({exc}). The log in "
+                f"{action_log_dir(self.app.scan_path)} shows what was done.",
+            )
+            return
         finally:
             self.app.run_lock.release()
         self._json(HTTPStatus.OK, asdict(result))
@@ -375,6 +388,13 @@ class _Handler(BaseHTTPRequestHandler):
         )
 
 
+def action_log_dir(scan_path: Path) -> Path:
+    """Logs sit beside the scans folder (reports/actions), never above the repo."""
+    if scan_path.parent.name == "scans":
+        return scan_path.parent.parent / "actions"
+    return scan_path.parent / "actions"
+
+
 def detect_brew_prefix() -> Path | None:
     for candidate in (Path("/opt/homebrew"), Path("/usr/local")):
         if (candidate / "bin" / "brew").exists():
@@ -388,7 +408,7 @@ def make_server(
     port: int = 0,
     token: str | None = None,
     findings_path: Path | None = None,
-    runner: Runner = subprocess_runner,
+    runner: Runner = action_runner,
     brew_prefix: Path | str | None = "detect",
 ) -> tuple[ScanServer, str]:
     token = token or secrets.token_urlsafe(32)
