@@ -414,3 +414,35 @@ dialog.action-dialog h4 { margin: 16px 0 4px; font-size: 14px; color: var(--ink-
 .confirm-label { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
 .confirm-input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 0; box-shadow: inset 0 0 0 1px var(--ring); background: var(--surface); color: var(--ink); }
 .results h3 { margin: 0 0 6px; }
+
+/* Target controls and the path-to-target bar */
+.target { margin: 0 0 20px; padding-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+.target-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.target-field { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.target-field input { width: 6em; font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink); }
+.target-controls button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.target-sentence { margin: 12px 0 8px; font-size: 14px; color: var(--ink); }
+.target-bar-wrap { position: relative; padding-top: 22px; }
+.target-bar { position: relative; display: flex; gap: 2px; height: 28px; border-radius: 4px; background: var(--wash); }
+.target-seg { height: 100%; flex-grow: 0; flex-shrink: 0; border-radius: 4px; outline-offset: 1px; }
+.target-seg:hover, .target-seg:focus-visible { filter: brightness(1.12); outline: 2px solid var(--ink-2); }
+.target-seg.free { background: var(--neutral-1); }
+.target-seg.now { background: var(--series-1); }
+.target-seg.wait, .target-key.wait {
+  background: repeating-linear-gradient(45deg, var(--series-1) 0 3px, color-mix(in srgb, var(--series-1) 35%, var(--surface)) 3px 6px);
+}
+.target-marker { position: absolute; top: -6px; bottom: -6px; width: 0; border-left: 2px dashed var(--ink); transform: translateX(-1px); }
+.target-marker::before { content: ""; position: absolute; top: -4px; bottom: -4px; left: -12px; width: 22px; }
+.target-marker:focus-visible { outline: 2px solid var(--ink-2); }
+.target-marker-label { position: absolute; bottom: 100%; left: 4px; white-space: nowrap; font-size: 12px; color: var(--ink-2); }
+.target-marker.flip .target-marker-label { left: auto; right: 4px; }
+.target-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 12px 0 0; padding: 0; font-size: 12px; color: var(--ink-2); }
+.target-key { display: inline-block; width: 14px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.target-key.free { background: var(--neutral-1); }
+.target-key.now { background: var(--series-1); }
+.target-key.goal { width: 0; height: 12px; border-radius: 0; border-left: 2px dashed var(--ink); margin-right: 8px; }
+.target-status { margin: 8px 0 0; font-size: 14px; font-weight: 500; }
+.target-tip { position: absolute; top: 0; transform: translate(-50%, -100%); z-index: 5; display: flex; flex-direction: column; gap: 2px; max-width: 240px; padding: 8px 10px; border-radius: 8px; background: var(--surface-raised); border: 1px solid var(--hairline); box-shadow: 0 4px 14px rgb(0 0 0 / 0.15); font-size: 12px; color: var(--ink-2); pointer-events: none; }
+.target-tip strong { color: var(--ink); font-size: 13px; }
+@media (forced-colors: active) { .target-seg { border: 1px solid CanvasText; } }
+.target-tip[hidden] { display: none; }
