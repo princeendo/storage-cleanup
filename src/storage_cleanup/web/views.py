@@ -20,6 +20,7 @@ from storage_cleanup.scan.categories import (
     PROJECTS,
 )
 from storage_cleanup.scan.model import AgeSignal, Item, ItemKind, JsonValue, Scan
+from storage_cleanup.web.growth import growth
 
 if TYPE_CHECKING:
     from storage_cleanup.findings import Findings
@@ -418,6 +419,8 @@ def build_view(
     now: float,
     findings: "Findings | None" = None,
     findings_note: str | None = None,
+    previous: Scan | None = None,
+    history: list[dict[str, JsonValue]] | None = None,
 ) -> dict[str, JsonValue]:
     """Everything the page needs, as one JSON-ready document."""
     # Imported here: recommendations builds on this module's category groups.
@@ -442,6 +445,8 @@ def build_view(
         "target_candidates": list(target_candidates(scan, recs)),
         "findings": _findings_view(scan, findings) if findings is not None else None,
         "findings_note": findings_note,
+        "growth": growth(scan, previous) if previous is not None else None,
+        "history": list(history) if history is not None else [],
         "categories": category_tree(scan).to_json(),
         "locations": location_tree(scan).to_json(),
         "scatter": list(scatter_points(scan, now)),
