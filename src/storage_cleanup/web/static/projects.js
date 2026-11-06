@@ -50,7 +50,7 @@ function tableRow(row, largest, onSelect) {
     cell("td", "num", formatBytes(row.regenerable_bytes)),
     cell("td", "num", row.last_commit_days === null ? "unknown" : `${formatAge(row.last_commit_days)} ago`),
   );
-  const open = () => onSelect(row);
+  const open = () => onSelect({ ...row, item_id: row.id });
   tr.addEventListener("click", open);
   tr.addEventListener("keydown", (event) => {
     if (event.key === "Enter") open();

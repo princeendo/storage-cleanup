@@ -1,6 +1,7 @@
 // The Recommendations tab: ranked by score, filterable, roll-ups expand.
 // Every string comes from the scan or an agent, so all text uses textContent.
 import { describeAge, formatBytes } from "./format.js";
+import * as queue from "./queue.js";
 
 const SOURCE_LABELS = { agent: "Agent", rule: "Rule", mixed: "Agent + rules" };
 
@@ -35,10 +36,43 @@ function scoreCell(score) {
   return td;
 }
 
+// What checking a row queues: the item itself, or a roll-up's members.
+function selectable(row) {
+  if (row.item_id) return row.removable ? [row] : [];
+  return (row.children ?? []).flatMap(selectable);
+}
+
+function toEntry(row) {
+  return { item_id: row.item_id, name: row.name, path: row.path, size: row.size };
+}
+
+function checkCell(row) {
+  const td = el("td", "check-cell");
+  const targets = selectable(row);
+  if (!targets.length) return td;
+  const box = el("input");
+  box.type = "checkbox";
+  box.setAttribute("aria-label", `Queue ${row.name} for deletion`);
+  const sync = () => {
+    const count = targets.filter((t) => queue.has(t.item_id)).length;
+    box.checked = count === targets.length;
+    box.indeterminate = count > 0 && count < targets.length;
+  };
+  sync();
+  box.addEventListener("click", (event) => event.stopPropagation());
+  box.addEventListener("change", () => {
+    if (box.checked) queue.add(targets.map(toEntry));
+    else queue.remove(targets.map((t) => t.item_id));
+  });
+  queue.onChange(sync);
+  td.append(box);
+  return td;
+}
+
 function rowFor(row, view, onSelect, depth) {
   const tr = el("tr", depth ? "child-row" : "");
   tr.tabIndex = 0;
-  tr.append(scoreCell(row.score));
+  tr.append(checkCell(row), scoreCell(row.score));
 
   const item = el("td", "rec-item");
   const head = el("div", "rec-head");
@@ -147,6 +181,7 @@ export function renderRecommendations(el_, view, onSelect) {
   const head = el("thead");
   const headRow = el("tr");
   for (const [label, cls] of [
+    ["", "check-cell"],
     ["Score", ""],
     ["Item and reason", ""],
     ["Size", "num"],
@@ -162,6 +197,10 @@ export function renderRecommendations(el_, view, onSelect) {
   table.append(head, body);
   scroller.append(table);
   const empty = el("p", "empty", "No recommendations match these filters.");
+  const selectShown = el("button", "show-all", "Queue all shown for deletion");
+  selectShown.type = "button";
+  selectShown.addEventListener("click", () => queue.add(all.filter(matches).flatMap(selectable).map(toEntry)));
+  bar.append(selectShown);
   el_.append(bar, scroller, empty);
 
   function matches(row) {

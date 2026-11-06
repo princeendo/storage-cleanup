@@ -21,7 +21,7 @@ from storage_cleanup.web.server import (
     page_url,
     static_dir,
 )
-from tests.helpers import path_item
+from tests.helpers import FakeRunner, make_file, path_item
 from tests.web.test_views import scan_of
 
 TOKEN = "t0k3n-for-tests"
@@ -36,7 +36,7 @@ def scan_file(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def server(scan_file: Path) -> Iterator[ThreadingHTTPServer]:
-    srv, _ = make_server(scan_file, token=TOKEN)
+    srv, _ = make_server(scan_file, token=TOKEN, runner=FakeRunner(), brew_prefix=None)
     thread = threading.Thread(
         target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
     )
@@ -359,3 +359,240 @@ def test_findings_for_an_older_scan_are_noted_after_a_rescan(tmp_path: Path) -> 
         "Agent findings are for an older scan (S.json). Ask your agent to run "
         "AGENT_PLAYBOOK.md again for this scan."
     )
+
+
+# --- Removal endpoints -----------------------------------------------------
+
+
+def post(
+    srv: ThreadingHTTPServer,
+    path: str,
+    body: object,
+    *,
+    origin: str | None = "self",
+    content_type: str = "application/json",
+) -> tuple[int, Any]:
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    headers = {
+        "Host": f"127.0.0.1:{port}",
+        "Cookie": f"{TOKEN_COOKIE}_{port}={TOKEN}",
+        "Content-Type": content_type,
+    }
+    if origin is not None:
+        headers["Origin"] = f"http://127.0.0.1:{port}" if origin == "self" else origin
+    raw = body if isinstance(body, bytes) else json.dumps(body).encode()
+    conn.request("POST", path, body=raw, headers=headers)
+    resp = conn.getresponse()
+    text = resp.read()
+    try:
+        return resp.status, json.loads(text)
+    except ValueError:
+        return resp.status, text.decode()
+
+
+@pytest.fixture
+def sandbox(
+    tmp_path: Path,
+) -> Iterator[tuple[ThreadingHTTPServer, Any, list[Path], Path]]:
+    from storage_cleanup.scan.model import scan_to_json as to_json
+    from tests.actions.test_run import MovingTrash
+    from tests.actions.test_verify import scan_paths
+
+    home = tmp_path / "h"
+    files = [
+        make_file(home / "Downloads" / f"f{i}.dmg", 1000 * (i + 1)) for i in range(3)
+    ]
+    scan_path = tmp_path / "reports" / "scans" / "S.json"
+    scan_path.parent.mkdir(parents=True)
+    scan_path.write_text(to_json(scan_paths(home, files)))
+    runner = MovingTrash()
+    srv, _ = make_server(scan_path, token=TOKEN, runner=runner, brew_prefix=None)
+    thread = threading.Thread(
+        target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    yield srv, runner, files, tmp_path
+    srv.shutdown()
+    srv.server_close()
+
+
+def ids_of(srv: ThreadingHTTPServer, files: list[Path]) -> list[str]:
+    from storage_cleanup.scan.model import scan_from_json
+
+    scan = scan_from_json(srv.scan_path.read_text())  # type: ignore[attr-defined]
+    by_path = {i.path: i.id for i in scan.items}
+    return [by_path[str(f)] for f in files]
+
+
+def test_plan_endpoint_has_no_side_effects(sandbox: Any) -> None:
+    srv, runner, files, _ = sandbox
+    status, plan = post(
+        srv, "/api/plan", {"item_ids": ids_of(srv, files), "permanent": False}
+    )
+    assert status == 200
+    assert len(plan["entries"]) == 3
+    assert plan["plan_id"]
+    assert runner.calls == []
+    assert all(f.exists() for f in files)
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.example", "null"])
+def test_post_requires_origin(sandbox: Any, origin: str | None) -> None:
+    srv, _runner, _files, _ = sandbox
+    status, _ = post(
+        srv, "/api/plan", {"item_ids": [], "permanent": False}, origin=origin
+    )
+    assert status == 403
+
+
+def test_post_requires_json_and_size_limit(sandbox: Any) -> None:
+    srv, _, _, _ = sandbox
+    status, _ = post(srv, "/api/plan", {"item_ids": []}, content_type="text/plain")
+    assert status == 415
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", "/api/plan", skip_host=True)
+    for name, value in {
+        "Host": f"127.0.0.1:{port}",
+        "Cookie": f"{TOKEN_COOKIE}_{port}={TOKEN}",
+        "Origin": f"http://127.0.0.1:{port}",
+        "Content-Type": "application/json",
+        "Content-Length": "2000000",
+    }.items():
+        conn.putheader(name, value)
+    conn.endheaders(b"{}")
+    assert conn.getresponse().status == 413
+    status, _ = post(srv, "/api/plan", b"{not json")
+    assert status == 400
+    status, _ = post(srv, "/api/plan", {"item_ids": "nope", "permanent": False})
+    assert status == 400
+
+
+def test_run_requires_matching_plan_id(sandbox: Any) -> None:
+    srv, runner, files, _ = sandbox
+    body = {
+        "item_ids": ids_of(srv, files),
+        "permanent": False,
+        "plan_id": "stale",
+        "confirm": None,
+    }
+    status, message = post(srv, "/api/run", body)
+    assert status == 409
+    assert message == "The plan changed; review it again."
+    assert runner.calls == []
+
+
+def test_permanent_requires_phrase(sandbox: Any) -> None:
+    srv, _runner, files, _ = sandbox
+    ids = ids_of(srv, files)
+    _, plan = post(srv, "/api/plan", {"item_ids": ids, "permanent": True})
+    body = {
+        "item_ids": ids,
+        "permanent": True,
+        "plan_id": plan["plan_id"],
+        "confirm": "yes",
+    }
+    status, message = post(srv, "/api/run", body)
+    assert status == 400
+    assert 'Type "delete permanently"' in message
+    assert all(f.exists() for f in files)
+
+
+def test_run_trashes_via_runner_and_logs(sandbox: Any) -> None:
+    srv, _runner, files, tmp_path = sandbox
+    ids = ids_of(srv, files[:2])
+    _, plan = post(srv, "/api/plan", {"item_ids": ids, "permanent": False})
+    body = {
+        "item_ids": ids,
+        "permanent": False,
+        "plan_id": plan["plan_id"],
+        "confirm": None,
+    }
+    status, result = post(srv, "/api/run", body)
+    assert status == 200
+    assert [r["status"] for r in result["results"]] == ["done", "done"]
+    assert not files[0].exists() and not files[1].exists() and files[2].exists()
+    log = Path(result["log_path"])
+    assert log.parent == tmp_path / "reports" / "actions"
+    assert log.exists()
+
+
+def test_concurrent_run_gets_409(sandbox: Any) -> None:
+    srv, runner, files, _ = sandbox
+    ids = ids_of(srv, files)
+    _, plan = post(srv, "/api/plan", {"item_ids": ids, "permanent": False})
+    body = {
+        "item_ids": ids,
+        "permanent": False,
+        "plan_id": plan["plan_id"],
+        "confirm": None,
+    }
+    srv.run_lock.acquire()
+    try:
+        status, message = post(srv, "/api/run", body)
+    finally:
+        srv.run_lock.release()
+    assert (status, message) == (409, "Another run is in progress.")
+    assert runner.calls == []
+
+
+def test_empty_trash_requires_phrase_and_uses_osascript(sandbox: Any) -> None:
+    srv, runner, _, _ = sandbox
+    status, _ = post(srv, "/api/empty-trash", {"confirm": "sure"})
+    assert status == 400
+    assert runner.calls == []
+    status, result = post(srv, "/api/empty-trash", {"confirm": "empty trash"})
+    assert status == 200
+    assert result == {"ok": True, "message": "The Trash is empty."}
+    assert runner.calls[0][0] == "osascript"
+
+
+def test_post_to_unknown_path_is_405(sandbox: Any) -> None:
+    srv, _, _, _ = sandbox
+    status, _ = post(srv, "/api/view", {})
+    assert status == 405
+
+
+def test_run_errors_come_back_as_json(
+    sandbox: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from storage_cleanup.web import server as server_mod
+
+    srv, _, files, _ = sandbox
+    ids = ids_of(srv, files[:1])
+    _, plan = post(srv, "/api/plan", {"item_ids": ids, "permanent": False})
+
+    def boom(*args: object, **kwargs: object) -> object:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(server_mod, "run_plan", boom)
+    body = {
+        "item_ids": ids,
+        "permanent": False,
+        "plan_id": plan["plan_id"],
+        "confirm": None,
+    }
+    status, message = post(srv, "/api/run", body)
+    assert status == 500
+    assert message.startswith("The run stopped unexpectedly")
+    assert not srv.run_lock.locked()
+
+
+def test_logs_stay_beside_a_scan_outside_reports(tmp_path: Path) -> None:
+    from storage_cleanup.web.server import action_log_dir
+
+    assert action_log_dir(tmp_path / "reports" / "scans" / "S.json") == (
+        tmp_path / "reports" / "actions"
+    )
+    assert action_log_dir(tmp_path / "x.json") == tmp_path / "actions"
+
+
+def test_server_uses_the_no_terminal_runner_by_default(scan_file: Path) -> None:
+    from storage_cleanup.actions.run import action_runner
+
+    srv, _ = make_server(scan_file, token=TOKEN)
+    try:
+        assert srv.runner is action_runner
+    finally:
+        srv.server_close()

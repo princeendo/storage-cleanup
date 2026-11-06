@@ -168,3 +168,19 @@ def test_rollup_does_not_mix_rules() -> None:
     assert [len(r["children"]) for r in rollups] == [3]
     assert rollups[0]["confidence"] == 0.9
     assert len(rows) == 2
+
+
+def test_rows_say_whether_the_page_can_remove_them() -> None:
+    from tests.actions.test_plan import TOTAL, VOLUME
+
+    s = scan_of([DOWNLOADS, *DMGS, TOTAL, VOLUME], used=100 * GIB)
+    rows = json.loads(
+        json.dumps(recommendation_rows(s, [rec(DMGS[0].id), rec(VOLUME.id)], NOW))
+    )
+    removable = {r["item_id"]: r["removable"] for r in rows}
+    assert removable == {DMGS[0].id: True, VOLUME.id: False}
+    rollup = json.loads(
+        json.dumps(recommendation_rows(scan(), [rec(d.id) for d in DMGS], NOW))
+    )
+    assert rollup[0]["removable"] is True
+    assert all(c["removable"] for c in rollup[0]["children"])

@@ -57,7 +57,7 @@ export function renderScatter(el, view, onSelect) {
     window.addEventListener("resize", () => chart.resize());
     chart.on("click", (params) => {
       const p = params.data?.point;
-      if (p) onSelect({ ...p, categoryName: view.category_names[p.category] ?? p.category });
+      if (p) onSelect({ ...p, item_id: p.id, categoryName: view.category_names[p.category] ?? p.category });
     });
   }
 

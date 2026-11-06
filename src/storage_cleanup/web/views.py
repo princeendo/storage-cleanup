@@ -55,6 +55,7 @@ class TreeNode:
     group: str
     path: str | None = None
     children: list["TreeNode"] = field(default_factory=list)
+    protected: bool = False
 
     def to_json(self) -> dict[str, JsonValue]:
         data: dict[str, JsonValue] = {
@@ -64,6 +65,7 @@ class TreeNode:
             "kind": self.kind,
             "group": self.group,
             "path": self.path,
+            "protected": self.protected,
         }
         if self.children:
             data["children"] = [c.to_json() for c in self.children]
@@ -208,7 +210,16 @@ def _partition(
                     path=item.path,
                 )
             )
-        return TreeNode(item.id, item.name, value, "item", g, item.path, children)
+        return TreeNode(
+            item.id,
+            item.name,
+            value,
+            "item",
+            g,
+            item.path,
+            children,
+            protected=item.protected_reason is not None,
+        )
 
     by_group: dict[str, list[TreeNode]] = {}
     for item in items:

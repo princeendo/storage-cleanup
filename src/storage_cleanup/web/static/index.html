@@ -19,7 +19,7 @@
     <button role="tab" aria-selected="true" data-tab="overview" aria-controls="overview">Overview</button>
     <button role="tab" aria-selected="false" data-tab="recommendations" aria-controls="recommendations">Recommendations</button>
     <button role="tab" aria-selected="false" disabled>Archive<span class="soon">coming soon</span></button>
-    <button role="tab" aria-selected="false" disabled>Delete<span class="soon">coming soon</span></button>
+    <button role="tab" aria-selected="false" data-tab="delete" aria-controls="delete">Delete</button>
   </nav>
 
   <div id="banner" class="banner" hidden></div>
@@ -69,6 +69,13 @@
       <h2>Recommendations</h2>
       <p class="lede" id="recs-summary"></p>
       <div id="recs-body"></div>
+    </section>
+  </main>
+
+  <main id="delete" role="tabpanel" hidden>
+    <section class="card">
+      <h2>Delete</h2>
+      <div id="delete-body"></div>
     </section>
   </main>
 </div>

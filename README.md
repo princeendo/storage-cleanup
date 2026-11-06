@@ -2,20 +2,25 @@
 
 A tool for finding what is using disk space on a Mac and reclaiming it safely.
 
-The project is at an early stage: the read-only scanner and the local page
-work; the agent playbook and cleanup actions come next. See `TASKS.md` and the design in
+The scanner, the local page, the agent playbook, and removal (Trash,
+permanent delete, Docker, Homebrew) work. Archiving to a homelab and a target
+mode come next. See `TASKS.md` and the design in
 `docs/superpowers/specs/2026-11-05-storage-explorer-design.md`.
 
 ## Principles
 
-- **Report first.** Commands show what they found and change nothing unless you
-  ask them to.
-- **Trash, not delete.** Anything removed goes to the Trash, so you can put it
-  back.
-- **Only known-safe locations.** The tool removes things only from locations it
-  knows regenerate (caches, build output) or that you pick yourself. System
-  folders, Photos, Mail, iCloud Drive, Keychains, and Time Machine are never
-  touched.
+- **Report first.** Scanning and the page change nothing until you confirm a
+  removal.
+- **Trash by default.** Removed files and folders go to the Trash, so you can
+  put them back. Permanent deletion and Empty Trash each need a typed
+  confirmation.
+- **You choose, the tool checks.** Rules and agents only recommend. The tool
+  acts only on items you queued and confirmed, and checks each one again just
+  before acting.
+- **Protected things stay put.** System folders, Photos, Mail, Messages, iCloud
+  Drive, Keychains, Time Machine data, anything inside `.git`, and any folder
+  that contains one of these are never removed. Docker volumes are never
+  removed.
 - **No `sudo`.** The tool runs as you and skips anything it cannot read.
 
 ## Requirements
@@ -91,6 +96,37 @@ your git projects spend on rebuildable folders such as `node_modules`.
   `serve` prints; other web pages and programs cannot read it.
 - `--scan FILE` shows a specific scan, `--port N` picks the port, and
   `--no-open` prints the link without opening a browser.
+
+## Removing things
+
+Nothing is removed until you confirm an exact plan.
+
+1. **Queue.** Check items on the Recommendations tab (a grouped row selects
+   everything inside it), or open any item's details and choose "Add to
+   Delete queue". The queue is kept for this browser tab.
+2. **Review.** On the Delete tab, "Review…" asks the server for the exact plan:
+   every path and size, how each item is removed, how to undo it, warnings
+   (for example a repository with unsaved work), and anything that will be
+   left out and why.
+3. **Confirm.** "Move to Trash" is the default, so Finder's Put Back works.
+   Turning it off deletes permanently and needs a second confirmation where
+   you type `delete permanently`. Docker images and build cache are removed
+   with Docker, and Homebrew packages with `brew uninstall`; Docker volumes are
+   never removed.
+4. **Check and run.** Just before acting, each item is checked again. It must
+   still exist, be about the scanned size, lie inside your home folder,
+   `/Applications`, or Homebrew's folder, and not be (or contain, at any
+   depth) anything protected. Folders that hold another mounted disk or
+   online-only iCloud files are skipped, and so are links (they are never
+   followed). Anything that fails is skipped with the reason.
+5. **Results.** You see what was done, skipped, or failed, the space moved to
+   the Trash (freed once you empty it) and freed now, and free space before
+   and after. A log is written to `reports/actions/`. Run a new scan to refresh
+   the charts.
+
+**Empty Trash** is a separate button that needs you to type `empty trash`.
+It asks Finder to empty the Trash, so macOS may ask once whether your terminal
+may control Finder. If you say no, empty the Trash in Finder instead.
 
 ## Asking an agent to analyze your Mac
 
