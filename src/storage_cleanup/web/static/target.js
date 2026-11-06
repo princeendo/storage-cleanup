@@ -242,9 +242,7 @@ export function renderTarget(root, view) {
     if (gap <= 0) text = "Met now";
     else if (gapAll <= 0) text = "Met once you empty the Trash";
     else text = `Not met yet: ${formatBytes(gapAll)} to go`;
-    if (o.local_snapshots > 0) {
-      text += `. ${o.local_snapshots} local snapshot${o.local_snapshots === 1 ? "" : "s"} may hold some of the freed space until they expire.`;
-    }
+    if (o.local_snapshots > 0) text += ". Snapshots may keep some space in use until macOS removes them.";
     status.textContent = text;
   }
 
