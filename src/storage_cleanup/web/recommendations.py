@@ -172,7 +172,8 @@ def target_candidates(scan: Scan, recs: Sequence[Recommendation]) -> list[Row]:
     chosen = {
         r.item_id: r.confidence
         for r in recs
-        if (item := by_id.get(r.item_id)) is not None
+        if r.action == "delete"
+        and (item := by_id.get(r.item_id)) is not None
         and item.protected_reason is None
         and removal_method(item, permanent=False) is not None
     }

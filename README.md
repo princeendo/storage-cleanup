@@ -142,8 +142,8 @@ Delete tab, exactly as above.
    keeps what you already queued, never removes anything from the queue, and
    never picks an item together with a folder that holds it.
 3. **Read the bar.** "Path to your target" shows the space that is free today,
-   the queued items that free space as soon as they run (Docker, Homebrew,
-   permanent delete), and the queued items that wait in the Trash (hatched), with
+   the queued items that free space as soon as they run (Docker and Homebrew
+   items; the bar does not see the permanent-delete switch), and the queued items that wait in the Trash (hatched), with
    a dashed marker at the target. Below it you see "Met now", "Met once you
    empty the Trash", or "Not met yet". If the scan saw local snapshots, it adds
    that snapshots may keep some space in use until macOS removes them.

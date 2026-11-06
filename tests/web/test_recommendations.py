@@ -225,6 +225,11 @@ def test_target_candidates_exclude_volumes_protected_and_unknown() -> None:
     assert [r["item_id"] for r in rows] == [CLIP.id]
 
 
+def test_target_candidates_only_delete_actions() -> None:
+    rows = candidates([rec(MOVIES.id, action="archive"), rec(CLIP.id, action="delete")])
+    assert [r["item_id"] for r in rows] == [CLIP.id]
+
+
 def test_target_candidates_frees_now() -> None:
     rows = {r["item_id"]: r for r in candidates([rec(IMAGE.id), rec(CLIP.id)])}
     assert rows[IMAGE.id]["frees_now"] is True

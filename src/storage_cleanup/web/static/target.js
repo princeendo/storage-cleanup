@@ -24,7 +24,9 @@ export function bytesNeeded(overview, mode, value) {
   return (v / 100) * overview.total_bytes - overview.free_bytes;
 }
 
+// An item with no path (Docker) never covers anything and is never covered.
 function covers(ancestor, path) {
+  if (!ancestor || !path) return false;
   return path === ancestor || path.startsWith(ancestor.endsWith("/") ? ancestor : `${ancestor}/`);
 }
 
@@ -42,7 +44,7 @@ export function fill(candidates, needed, queuedItems = []) {
     if (queuedIds.has(c.item_id)) continue;
     if (taken.some((p) => covers(p, c.path) || covers(c.path, p))) continue;
     picked.push(c);
-    taken.push(c.path);
+    if (c.path) taken.push(c.path);
     have += c.size;
   }
   return picked;
