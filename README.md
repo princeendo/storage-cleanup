@@ -3,8 +3,8 @@
 A tool for finding what is using disk space on a Mac and reclaiming it safely.
 
 The scanner, the local page, the agent playbook, and removal (Trash,
-permanent delete, Docker, Homebrew) work. Archiving to a homelab and a target
-mode come next. See `TASKS.md` and the design in
+permanent delete, Docker, Homebrew), target mode, and the "what grew" card
+work. Archiving to a homelab comes next. See `TASKS.md` and the design in
 `docs/superpowers/specs/2026-11-05-storage-explorer-design.md`.
 
 ## Principles
@@ -127,6 +127,36 @@ Nothing is removed until you confirm an exact plan.
 **Empty Trash** is a separate button that needs you to type `empty trash`.
 It asks Finder to empty the Trash, so macOS may ask once whether your terminal
 may control Finder. If you say no, empty the Trash in Finder instead.
+
+## Reaching a free-space target
+
+On the Recommendations tab, target mode helps you pick what to remove to reach
+a goal. It never removes anything itself: you still review and confirm in the
+Delete tab, exactly as above.
+
+1. **Set a goal.** Choose "Reach N % free" or "Free up N GiB". The amount is in
+   GiB (1024 x 1024 x 1024 bytes), like every other number on the page. The
+   page remembers your goal in this browser.
+2. **Check the best items.** "Check the best items" adds the best-scoring
+   removable recommendations to the Delete queue until the goal is met. It
+   keeps what you already queued, never removes anything from the queue, and
+   never picks an item together with a folder that holds it.
+3. **Read the bar.** "Path to your target" shows the space that is free today,
+   the queued items that free space as soon as they run (Docker and Homebrew
+   items; the bar does not see the permanent-delete switch), and the queued items that wait in the Trash (hatched), with
+   a dashed marker at the target. Below it you see "Met now", "Met once you
+   empty the Trash", or "Not met yet". If the scan saw local snapshots, it adds
+   that snapshots may keep some space in use until macOS removes them.
+4. **Review and confirm.** Open the Delete tab, review the exact plan, and
+   confirm.
+
+## What grew since last time
+
+The Overview has a "What grew since last time" card. It compares the scan with
+the previous saved scan in the same folder and lists the items that grew or
+shrank by at least 100 MiB, with "new" and "gone" labels. A sparkline shows used
+space across up to your last 60 saved scans. With only one scan, the card says
+"Run another scan later to see what grew."
 
 ## Asking an agent to analyze your Mac
 

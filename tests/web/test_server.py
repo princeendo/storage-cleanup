@@ -596,3 +596,29 @@ def test_server_uses_the_no_terminal_runner_by_default(scan_file: Path) -> None:
         assert srv.runner is action_runner
     finally:
         srv.server_close()
+
+
+def test_view_growth_with_two_scans_and_none_with_one(tmp_path: Path) -> None:
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    old = folder / "20260101T000000Z.json"
+    new = folder / "20260102T000000Z.json"
+    old.write_text(scan_to_json(scan_of([path_item("/h/Movies", 100)], used=1000)))
+    new.write_text(scan_to_json(scan_of([path_item("/h/Movies", 100)], used=1500)))
+    one: Any = load_view(old, 0.0)
+    assert one["growth"] is None
+    assert len(one["history"]) == 2
+    two: Any = load_view(new, 0.0)
+    assert two["growth"]["used_change"] == 500
+    assert [h["used_bytes"] for h in two["history"]] == [1000, 1500]
+
+
+def test_unreadable_previous_scan_is_skipped(tmp_path: Path) -> None:
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    (folder / "20260101T000000Z.json").write_text("{broken")
+    new = folder / "20260102T000000Z.json"
+    new.write_text(scan_to_json(scan_of([path_item("/h/Movies", 100)])))
+    view: Any = load_view(new, 0.0)
+    assert view["growth"] is None
+    assert len(view["history"]) == 1

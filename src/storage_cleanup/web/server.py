@@ -27,6 +27,8 @@ from storage_cleanup.findings import (
 )
 from storage_cleanup.scan.context import Runner
 from storage_cleanup.scan.model import JsonValue, Scan, scan_from_json
+from storage_cleanup.scan.store import previous_scan
+from storage_cleanup.web.growth import history
 from storage_cleanup.web.views import build_view
 
 TOKEN_COOKIE: Final = "sc_token"
@@ -117,8 +119,22 @@ def load_view(
     """
     scan = _read_scan(path)
     findings, note = _load_findings(scan, path, findings_path)
+    previous: Scan | None = None
+    earlier = previous_scan(path.parent, path)
+    if earlier is not None:
+        try:
+            previous = _read_scan(earlier)
+        except ValueError:
+            previous = None
     try:
-        return build_view(scan, now, findings, note)
+        return build_view(
+            scan,
+            now,
+            findings,
+            note,
+            previous=previous,
+            history=history(sorted(path.parent.glob("*.json"))),
+        )
     except Exception as exc:
         raise ValueError(
             f"Cannot read scan {path}: the page cannot draw it ({exc!r})"

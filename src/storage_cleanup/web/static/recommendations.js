@@ -146,7 +146,7 @@ export function renderRecommendations(el_, view, onSelect) {
   const summary = document.getElementById("recs-summary");
   const o = view.overview;
   summary.textContent = all.length
-    ? `${o.recommendation_count} recommendations · ${formatBytes(o.reclaimable_bytes)} could be reclaimed. Choosing what to archive or delete arrives in the next step.`
+    ? `${o.recommendation_count} recommendations · ${formatBytes(o.reclaimable_bytes)} could be reclaimed. Check items to add them to the Delete queue.`
     : "";
   el_.replaceChildren();
   if (!all.length) {
