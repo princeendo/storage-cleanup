@@ -43,8 +43,11 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
    explicit per-run choice with its own second confirmation (the user types
    `delete permanently`). **Empty Trash** is permanent too and has its own typed
    confirmation (`empty trash`).
-3. **Archive** (build step 5) copies an item to the homelab, verifies
-   checksums on both ends, and only then moves the local copy to the Trash.
+3. **Archive** copies an item to the homelab over the existing `opencode` SSH
+   setup from `remote_server_maintenance`, with `sudo -n` on the homelab. It
+   sends only allowlisted commands and never removes anything there. The copy
+   must match by SHA-256 on both ends, and the item and the disk are
+   re-checked before the local copy goes to the Trash.
 4. **Confirm an exact plan.** Before acting, the page shows every path, its
    size, how it will be removed, how to undo it, any warnings, every refusal,
    and the totals. The server rebuilds the plan itself and acts only if it
@@ -87,7 +90,8 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
 ## Safety Rules for Agents
 
 1. Never run a removing command against the real filesystem while you develop or
-   test. Tests use temporary directories (`tmp_path`) and synthetic fixtures.
+   test. Tests use temporary directories (`tmp_path`) and synthetic fixtures. Tests never touch the real
+   homelab.
 2. Read-only commands may run at any time: `df`, `du`, `diskutil info`,
    `diskutil apfs list`, `tmutil listlocalsnapshots`, `ls`, `stat`, `find`
    without `-delete`.
