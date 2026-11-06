@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from typing import Final
 
+from storage_cleanup.actions.model import Method
 from storage_cleanup.actions.plan import removal_method
 from storage_cleanup.scan.model import Item, JsonValue, Scan
 from storage_cleanup.scan.recommend import Recommendation, score
@@ -160,3 +161,35 @@ def recommendation_rows(
             }
         )
     return sorted(result, key=_score_of, reverse=True)
+
+
+def target_candidates(scan: Scan, recs: Sequence[Recommendation]) -> list[Row]:
+    """Removable recommended items for target mode, best score first.
+
+    An item under another candidate is left out, because its parent covers it."""
+    by_id = {i.id: i for i in scan.items}
+    groups = category_groups(scan.items)
+    chosen = {
+        r.item_id: r.confidence
+        for r in recs
+        if (item := by_id.get(r.item_id)) is not None
+        and item.protected_reason is None
+        and removal_method(item, permanent=False) is not None
+    }
+    rows: list[Row] = []
+    for item_id in chosen:
+        item = by_id[item_id]
+        if _recommended_ancestor(item, by_id, set(chosen)) is not None:
+            continue
+        rows.append(
+            {
+                "item_id": item_id,
+                "name": item.name,
+                "path": item.path,
+                "size": item.size_bytes,
+                "score": score(chosen[item_id], item.size_bytes),
+                "category": groups[item_id],
+                "frees_now": removal_method(item, permanent=False) is not Method.TRASH,
+            }
+        )
+    return sorted(rows, key=lambda r: (_score_of(r), _int(r["size"])), reverse=True)

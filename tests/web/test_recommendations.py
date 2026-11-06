@@ -7,8 +7,10 @@ from storage_cleanup.web.recommendations import (
     merge_recommendations,
     reclaimable_bytes,
     recommendation_rows,
+    target_candidates,
 )
 from storage_cleanup.web.views import build_view
+from tests.actions.test_plan import IMAGE, TOTAL, VOLUME
 from tests.helpers import path_item
 from tests.web.test_views import scan_of
 
@@ -184,3 +186,51 @@ def test_rows_say_whether_the_page_can_remove_them() -> None:
     )
     assert rollup[0]["removable"] is True
     assert all(c["removable"] for c in rollup[0]["children"])
+
+
+def target_scan() -> Any:
+    return scan_of(
+        [DOWNLOADS, *DMGS, MOVIES, CLIP, MAIL, TOTAL, IMAGE, VOLUME], used=100 * GIB
+    )
+
+
+def candidates(recs: list[Recommendation]) -> Any:
+    return json.loads(json.dumps(target_candidates(target_scan(), recs)))
+
+
+def test_target_candidates_ordered_by_score() -> None:
+    rows = candidates([rec(DMGS[0].id, 0.9), rec(MOVIES.id, 0.9)])
+    assert [r["item_id"] for r in rows] == [MOVIES.id, DMGS[0].id]
+    assert rows[0]["category"] == "home"
+    assert set(rows[0]) == {
+        "item_id",
+        "name",
+        "path",
+        "size",
+        "score",
+        "category",
+        "frees_now",
+    }
+
+
+def test_target_candidates_exclude_nested_child() -> None:
+    rows = candidates([rec(MOVIES.id), rec(CLIP.id)])
+    assert [r["item_id"] for r in rows] == [MOVIES.id]
+
+
+def test_target_candidates_exclude_volumes_protected_and_unknown() -> None:
+    rows = candidates(
+        [rec(VOLUME.id), rec(TOTAL.id), rec(MAIL.id), rec("file:nope"), rec(CLIP.id)]
+    )
+    assert [r["item_id"] for r in rows] == [CLIP.id]
+
+
+def test_target_candidates_frees_now() -> None:
+    rows = {r["item_id"]: r for r in candidates([rec(IMAGE.id), rec(CLIP.id)])}
+    assert rows[IMAGE.id]["frees_now"] is True
+    assert rows[CLIP.id]["frees_now"] is False
+
+
+def test_build_view_includes_target_candidates() -> None:
+    view = build_view(scan(), NOW)
+    assert isinstance(view["target_candidates"], list)

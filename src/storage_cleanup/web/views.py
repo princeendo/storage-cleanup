@@ -426,6 +426,7 @@ def build_view(
         merge_recommendations,
         reclaimable_bytes,
         recommendation_rows,
+        target_candidates,
     )
 
     names: dict[str, JsonValue] = {**DISPLAY_NAMES, SYSTEM_OTHER: SYSTEM_OTHER_NAME}
@@ -438,6 +439,7 @@ def build_view(
         "schema": 1,
         "overview": summary,
         "recommendations": list(recommendation_rows(scan, recs, now)),
+        "target_candidates": list(target_candidates(scan, recs)),
         "findings": _findings_view(scan, findings) if findings is not None else None,
         "findings_note": findings_note,
         "categories": category_tree(scan).to_json(),
