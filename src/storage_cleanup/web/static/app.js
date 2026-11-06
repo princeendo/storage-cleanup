@@ -1,4 +1,4 @@
-import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
+import { describeAge, formatAgo, formatBytes, formatDate } from "./format.js";
 import * as queue from "./queue.js";
 import { renderArchiveTab } from "./archive.js";
 import { renderDeleteTab } from "./delete.js";
@@ -102,7 +102,7 @@ const FACTS = [
   ["Age", (e) => (e.age_days !== undefined ? describeAge(e.age_signal, e.age_days) : null)],
   ["Your files", (e) => (e.own_bytes !== undefined ? formatBytes(e.own_bytes) : null)],
   ["Rebuildable", (e) => (e.regenerable_bytes !== undefined ? formatBytes(e.regenerable_bytes) : null)],
-  ["Last commit", (e) => (e.last_commit_days !== undefined ? (e.last_commit_days === null ? "unknown" : `${formatAge(e.last_commit_days)} ago`) : null)],
+  ["Last commit", (e) => (e.last_commit_days !== undefined ? formatAgo(e.last_commit_days) : null)],
   ["Action", (e) => (e.action ? (e.action === "archive" ? "Archive" : "Delete (to the Trash)") : null)],
   ["Confidence", (e) => (typeof e.confidence === "number" ? `${Math.round(e.confidence * 100)}%` : null)],
   ["Score", (e) => (typeof e.score === "number" ? `${e.score} of 100` : null)],

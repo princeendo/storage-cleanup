@@ -1,5 +1,6 @@
 """What changed since the previous scan, and the used-space history."""
 
+import posixpath
 import threading
 from collections.abc import Sequence
 from pathlib import Path
@@ -48,15 +49,44 @@ def _change(row: dict[str, JsonValue]) -> int:
     return value
 
 
+def _really_appeared(row: dict[str, JsonValue], changes: dict[str, int]) -> bool:
+    """Whether a new or gone item really changed, not just gained or lost detail.
+
+    `scan --path` (and similar) measures a folder in more detail, so items appear
+    that the previous scan never looked for. They count only when the nearest
+    enclosing item measured in both scans changed by about as much.
+    """
+    if row["status"] == "changed":
+        return True
+    path = row["path"]
+    assert isinstance(path, str)
+    change = _change(row)
+    parent = posixpath.dirname(path)
+    while parent != path:
+        if parent in changes:
+            enclosing = changes[parent]
+            return enclosing * change > 0 and abs(
+                enclosing
+            ) >= EXPLAINED_FRACTION * abs(change)
+        path, parent = parent, posixpath.dirname(parent)
+    return True
+
+
 def growth(scan: Scan, previous: Scan) -> dict[str, JsonValue]:
     """The biggest items that grew or shrank, preferring the most specific item."""
     current = _path_items(scan)
     older = _path_items(previous)
+    changes = {
+        str(item.path): item.size_bytes - older[item_id].size_bytes
+        for item_id, item in current.items()
+        if item_id in older
+    }
     candidates = [
         row
         for item_id in current.keys() | older.keys()
         if abs(_change(row := _row(item_id, current.get(item_id), older.get(item_id))))
         >= GROWTH_MIN_BYTES
+        and _really_appeared(row, changes)
     ]
 
     def explained(row: dict[str, JsonValue]) -> bool:

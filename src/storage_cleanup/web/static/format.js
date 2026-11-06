@@ -34,6 +34,12 @@ export function formatAge(days) {
   return `${(days / 365.25).toFixed(1)} years`;
 }
 
+// "today", "3 days ago", "unknown".
+export function formatAgo(days) {
+  if (days === null || days === undefined) return "unknown";
+  return days < 1 ? "today" : `${formatAge(days)} ago`;
+}
+
 export function formatDate(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -58,5 +64,5 @@ const AGE_LABELS = {
 export function describeAge(signal, days) {
   const label = AGE_LABELS[signal] ?? "Last used";
   if (days === null || days === undefined) return `${label}: unknown`;
-  return days < 1 ? `${label} today` : `${label} ${formatAge(days)} ago`;
+  return `${label} ${formatAgo(days)}`;
 }

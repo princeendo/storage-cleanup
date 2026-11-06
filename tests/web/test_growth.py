@@ -231,3 +231,39 @@ def test_history_cache_is_thread_safe(
     assert errors == []
     assert all(r == [36, 37, 38, 39] for r in results)
     assert len(growth_module._CACHE) <= 8
+
+
+def test_newly_measured_detail_is_not_growth() -> None:
+    # `scan --path` adds detail under a folder that did not change size.
+    repo_before = path_item("/h/repo", 12 * GIB)
+    repo_after = path_item("/h/repo", 12 * GIB)
+    detail = path_item("/h/repo/.claude/worktrees", 4 * GIB, parent_id=repo_after.id)
+    now, old = pair([repo_before], [repo_after, detail])
+    result: Any = growth(now, old)
+    assert result["grew"] == []
+
+
+def test_detail_no_longer_measured_is_not_shrinkage() -> None:
+    repo = path_item("/h/repo", 12 * GIB)
+    detail = path_item("/h/repo/.claude/worktrees", 4 * GIB, parent_id=repo.id)
+    now, old = pair([repo, detail], [path_item("/h/repo", 12 * GIB)])
+    result: Any = growth(now, old)
+    assert result["shrank"] == []
+
+
+def test_new_child_counts_when_its_parent_grew_to_match() -> None:
+    now, old = pair(
+        [path_item("/h/Downloads", GIB)],
+        [path_item("/h/Downloads", 3 * GIB), path_item("/h/Downloads/roms", 2 * GIB)],
+    )
+    result: Any = growth(now, old)
+    assert [(r["name"], r["status"]) for r in result["grew"]] == [("roms", "new")]
+
+
+def test_gone_child_counts_when_its_parent_shrank_to_match() -> None:
+    now, old = pair(
+        [path_item("/h/Downloads", 3 * GIB), path_item("/h/Downloads/iso", 2 * GIB)],
+        [path_item("/h/Downloads", GIB)],
+    )
+    result: Any = growth(now, old)
+    assert [(r["name"], r["status"]) for r in result["shrank"]] == [("iso", "gone")]

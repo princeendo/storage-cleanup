@@ -1,6 +1,6 @@
 // "Dead weight in your projects": your files against rebuildable folders.
 // Plain HTML; every cell is set with textContent.
-import { formatAge, formatBytes } from "./format.js";
+import { formatAgo, formatBytes } from "./format.js";
 
 const FIRST = 25;
 
@@ -48,7 +48,7 @@ function tableRow(row, largest, onSelect) {
       return td;
     })(),
     cell("td", "num", formatBytes(row.regenerable_bytes)),
-    cell("td", "num", row.last_commit_days === null ? "unknown" : `${formatAge(row.last_commit_days)} ago`),
+    cell("td", "num", formatAgo(row.last_commit_days)),
   );
   const open = () => onSelect({ ...row, item_id: row.id });
   tr.addEventListener("click", open);
