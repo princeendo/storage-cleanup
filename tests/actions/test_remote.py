@@ -265,3 +265,42 @@ def test_check_storage_unparseable_df() -> None:
     fake = storage_fake(UUID + "\n", "garbage")
     with pytest.raises(RemoteError):
         check_storage(remote_for(fake), 0)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["find", "/mnt", "-delete"],
+        ["mkdir", "-delete"],
+        ["find", "/", "-exec", "rm", "-rf", "{}", "+"],
+        ["find", "/", "-execdir", "sh", "-c", "x", ";"],
+        ["find", "/", "-ok", "rm", "{}", ";"],
+        ["find", "/", "-okdir", "rm", "{}", ";"],
+        ["find", "/", "-exec"],
+        ["find", "/", "-fprint", "/etc/x"],
+        ["find", "/", "-fprintf", "/etc/x", "%p"],
+        ["find", "/", "-fls", "/etc/x"],
+    ],
+)
+def test_dangerous_argv_refused_by_call_and_ssh_args(argv: list[str]) -> None:
+    fake = FakeSsh()
+    remote = remote_for(fake)
+    with pytest.raises(ValueError):
+        remote.call(argv)
+    with pytest.raises(ValueError):
+        remote.ssh_args(argv)
+    assert fake.calls == []
+
+
+def test_ssh_args_refuses_unlisted_programs() -> None:
+    with pytest.raises(ValueError):
+        remote_for(FakeSsh()).ssh_args(["rm", "-rf", "/x"])
+
+
+def test_find_exec_chmod_still_works() -> None:
+    argv = [
+        "find", "/b", "(", "-type", "d", "-exec", "chmod", "2770", "{}", "+", ")",
+        "-o", "(", "-type", "f", "-exec", "chmod", "660", "{}", "+", ")",
+    ]  # fmt: skip
+    last = remote_for(FakeSsh()).ssh_args(argv)[-1]
+    assert shlex.split(last) == ["sudo", "-n", *argv]

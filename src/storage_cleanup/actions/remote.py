@@ -29,6 +29,9 @@ _DEST: Final = re.compile(r"^[A-Za-z0-9._/-]+$")
 _SSH_OPTIONS: Final = ("-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes")
 GIB: Final = 1024**3
 
+_FIND_RUNNERS: Final = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
+_FIND_WRITERS: Final = frozenset({"-fprint", "-fprint0", "-fprintf", "-fls"})
+
 type TimedRunner = Callable[[Sequence[str], float], CommandResult]
 
 
@@ -52,6 +55,21 @@ def ssh_runner(args: Sequence[str], timeout: float) -> CommandResult:
     return CommandResult(done.returncode, done.stdout, done.stderr)
 
 
+def _check_argv(argv: Sequence[str]) -> None:
+    """Refuse anything but the allowed programs, and find's removing/writing forms."""
+    if not argv or argv[0] not in REMOTE_PROGRAMS:
+        raise ValueError(f"Not an allowed remote program: {list(argv)!r}")
+    if "-delete" in argv:
+        raise ValueError("-delete is never allowed on the homelab.")
+    if argv[0] != "find":
+        return
+    for i, arg in enumerate(argv):
+        if arg in _FIND_WRITERS:
+            raise ValueError(f"find {arg} writes files and is not allowed.")
+        if arg in _FIND_RUNNERS and argv[i + 1 : i + 2] != ["chmod"]:
+            raise ValueError(f"find {arg} may only run chmod.")
+
+
 class RemoteError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -65,6 +83,7 @@ class Remote:
     run: TimedRunner
 
     def ssh_args(self, argv: Sequence[str]) -> list[str]:
+        _check_argv(argv)
         command = list(argv) if list(argv) == ["hostname"] else ["sudo", "-n", *argv]
         return [
             "/usr/bin/ssh",
@@ -82,8 +101,6 @@ class Remote:
         ]
 
     def call(self, argv: Sequence[str], timeout: float = 60) -> CommandResult:
-        if not argv or argv[0] not in REMOTE_PROGRAMS:
-            raise ValueError(f"Not an allowed remote program: {list(argv)!r}")
         return self.run(self.ssh_args(argv), timeout)
 
     def rsync_args(self, source: str, dest_dir: str) -> list[str]:
