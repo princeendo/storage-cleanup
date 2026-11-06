@@ -12,8 +12,9 @@ items for you, the path-to-target bar, and a comparison with the previous saved
 scan). The safety rules in `AGENTS.md` and `README.md` follow design section 9.
 Removal was checked end to end on a scratch sandbox, and one scratch file was
 moved to the real Trash with Colin's OK. Only `ARCHIVE-001` remains. It is
-BLOCKED: it needs a dedicated SSH key and account, set up by a task in the
-`remote_server_maintenance` repository.
+READY: Colin chose the existing `opencode` SSH setup from the
+`remote_server_maintenance` repository instead of a dedicated account, and its
+plan is `docs/superpowers/plans/2026-11-05-archive.md`.
 
 The overall design is `docs/superpowers/specs/2026-11-05-storage-explorer-design.md`.
 Each build step gets its own plan in `docs/superpowers/plans/`.
@@ -28,5 +29,5 @@ Each build step gets its own plan in `docs/superpowers/plans/`.
 | PAGE-001 | DONE | Local page: Overview, category and location lenses, reclaim-zone scatter, project dead weight (design build step 2) | Page renders a real scan offline with vendored ECharts (`docs/superpowers/plans/2026-11-05-page.md`) |
 | AGENT-001 | DONE | Agent playbook, findings schema, findings cards, scores, Recommendations tab (step 3) | Any coding agent can follow the playbook to produce a valid findings file the page shows (`docs/superpowers/plans/2026-11-05-agent.md`) |
 | DELETE-001 | DONE | Delete: Trash, Empty Trash, permanent delete, Docker, Homebrew; safety-rule updates (step 4) | Confirmation, re-verification, and protected-path tests pass; nothing removed without confirmation (`docs/superpowers/plans/2026-11-05-delete.md`) |
-| ARCHIVE-001 | BLOCKED (homelab SSH account) | Archive to the homelab (step 5) | Unblock: a dedicated SSH key and account exist, created by a task in `remote_server_maintenance` |
+| ARCHIVE-001 | READY | Archive to the homelab (step 5) | Items are copied to the homelab with the existing `opencode` SSH setup, SHA-256-checked on both ends, and only then moved to the Trash; nothing on the homelab is ever removed (`docs/superpowers/plans/2026-11-05-archive.md`) |
 | TARGET-001 | DONE | Target mode and "what grew since last time" (step 6) | Target pre-checks by score; growth compares with the previous saved scan |

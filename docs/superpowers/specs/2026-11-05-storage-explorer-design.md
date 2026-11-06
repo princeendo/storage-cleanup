@@ -331,10 +331,14 @@ settled in the homelab task that creates the account:
   configuration, never in this repository. Move to the next host only on DNS, routing, or
   connection-unavailable errors. Stop on an authentication failure, a host-key
   warning, or an unexpected host identity. Never bypass host-key checking.
-- **Credentials:** a dedicated SSH key and account for this tool, not the
-  `opencode` maintenance key (my call, accepted in discussion). Creating them
-  is a task in the `remote_server_maintenance` repository and blocks the
-  Archive feature.
+- **Credentials (Colin decided, 2026-11-05):** the existing `opencode`
+  account and key that the `remote_server_maintenance` repository already
+  uses, not a dedicated account. That account is not in the File Browser
+  group, so every remote command runs through `sudo -n`, the same way that
+  repository's own archive transfers do. The tool sends only a fixed set of
+  remote commands (read the mount, free space and file list; create
+  folders; copy; move into place; set owner and mode) and never removes
+  anything on the homelab.
 - **Destination:** the Seagate 22 TB disk, under a dedicated folder such as
   `/mnt/HD/Seagate22TB/filebrowser-inbox/Archives/mac-storage-cleanup/<date>/`,
   keeping each item's original path layout below that (my guess, accepted in
@@ -410,7 +414,7 @@ Each step is usable on its own:
    Recommendations tab.**
 4. **Delete** (Trash, permanent, Docker, Homebrew) with the confirmation flow
    and safety-rule updates.
-5. **Archive** to the homelab (blocked on the dedicated SSH key and account).
+5. **Archive** to the homelab (uses the existing `opencode` SSH setup).
 6. **Target mode** and **what grew since last time**.
 
 The existing `TASKS.md` entries (`SCAN-001`, `SCAN-002`, `CLEAN-001`) are
