@@ -2,8 +2,9 @@
 
 A tool for finding what is using disk space on a Mac and reclaiming it safely.
 
-The project is at an early stage: the read-only scanner and the local page
-work; the agent playbook and cleanup actions come next. See `TASKS.md` and the design in
+The scanner, the local page, the agent playbook, and removal (Trash,
+permanent delete, Docker, Homebrew) work. Archiving to a homelab and a target
+mode come next. See `TASKS.md` and the design in
 `docs/superpowers/specs/2026-11-05-storage-explorer-design.md`.
 
 ## Principles
@@ -95,6 +96,36 @@ your git projects spend on rebuildable folders such as `node_modules`.
   `serve` prints; other web pages and programs cannot read it.
 - `--scan FILE` shows a specific scan, `--port N` picks the port, and
   `--no-open` prints the link without opening a browser.
+
+## Removing things
+
+Nothing is removed until you confirm an exact plan.
+
+1. **Queue.** Check items on the Recommendations tab (a grouped row selects
+   everything inside it), or open any item's details and choose "Add to
+   Delete queue". The queue is kept for this browser tab.
+2. **Review.** On the Delete tab, "Review…" asks the server for the exact plan:
+   every path and size, how each item is removed, how to undo it, warnings
+   (for example a repository with unsaved work), and anything that will be
+   left out and why.
+3. **Confirm.** "Move to Trash" is the default, so Finder's Put Back works.
+   Turning it off deletes permanently and needs a second confirmation where
+   you type `delete permanently`. Docker images and build cache are removed
+   with Docker, and Homebrew packages with `brew uninstall`; Docker volumes are
+   never removed.
+4. **Check and run.** Just before acting, each item is checked again. It must
+   still exist, be about the scanned size, lie inside your home folder,
+   `/Applications`, or Homebrew's folder, and not be (or contain) anything
+   protected. Anything that fails is skipped with the reason. Links are never
+   followed.
+5. **Results.** You see what was done, skipped, or failed, the space moved to
+   the Trash (freed once you empty it) and freed now, and free space before
+   and after. A log is written to `reports/actions/`. Run a new scan to refresh
+   the charts.
+
+**Empty Trash** is a separate button that needs you to type `empty trash`.
+It asks Finder to empty the Trash, so macOS may ask once whether your terminal
+may control Finder. If you say no, empty the Trash in Finder instead.
 
 ## Asking an agent to analyze your Mac
 
