@@ -43,8 +43,11 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
    explicit per-run choice with its own second confirmation (the user types
    `delete permanently`). **Empty Trash** is permanent too and has its own typed
    confirmation (`empty trash`).
-3. **Archive** (build step 5) copies an item to the homelab, verifies
-   checksums on both ends, and only then moves the local copy to the Trash.
+3. **Archive** copies an item to the homelab over the existing `opencode` SSH
+   setup from `remote_server_maintenance`, with `sudo -n` on the homelab. It
+   sends only allowlisted commands and never removes anything there. The copy
+   must match by SHA-256 on both ends, and the item and the disk are
+   re-checked before the local copy goes to the Trash.
 4. **Confirm an exact plan.** Before acting, the page shows every path, its
    size, how it will be removed, how to undo it, any warnings, every refusal,
    and the totals. The server rebuilds the plan itself and acts only if it
@@ -73,10 +76,11 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
      (a folder containing `.git`) may be archived or trashed as one unit; the
      review warns when it has uncommitted or unpushed work.
    - Docker volumes are report-only.
-8. **No elevated rights.** Do not use `sudo` or ask for Full Disk Access. If a
-   path needs either, report it and skip it. Empty Trash goes through Finder
-   and may show a one-time macOS Automation prompt; the tool never changes
-   that setting itself.
+8. **No elevated rights on this Mac.** The tool never uses `sudo` on this Mac
+   and never asks for Full Disk Access. If a path needs either, report it and
+   skip it. On the homelab, Archive uses `sudo -n` as described in rule 3.
+   Empty Trash goes through Finder and may show a one-time macOS Automation
+   prompt; the tool never changes that setting itself.
 9. **Local server safety.** The page listens only on `127.0.0.1`, needs the
    per-session token, rejects foreign `Host` headers, and accepts changes only
    as JSON `POST` requests with a matching `Origin`. One run at a time.
@@ -87,7 +91,8 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
 ## Safety Rules for Agents
 
 1. Never run a removing command against the real filesystem while you develop or
-   test. Tests use temporary directories (`tmp_path`) and synthetic fixtures.
+   test. Tests use temporary directories (`tmp_path`) and synthetic fixtures. Tests never touch the real
+   homelab.
 2. Read-only commands may run at any time: `df`, `du`, `diskutil info`,
    `diskutil apfs list`, `tmutil listlocalsnapshots`, `ls`, `stat`, `find`
    without `-delete`.

@@ -32,11 +32,14 @@ function covers(ancestor, path) {
 
 // Greedy in score order. What is queued already counts toward the goal, and a
 // candidate inside (or holding) a queued path is never picked. `queuedItems`
-// is a list of {item_id, path, size}; returns the candidates to add.
-export function fill(candidates, needed, queuedItems = []) {
+// and `blockedItems` are lists of {item_id, path, size}; blocked items (the
+// Archive queue) are never picked and block nested picks, but do not count
+// toward the goal. Returns the candidates to add.
+export function fill(candidates, needed, queuedItems = [], blockedItems = []) {
   let have = queuedItems.reduce((sum, q) => sum + (q.size ?? 0), 0);
-  const taken = queuedItems.map((q) => q.path).filter(Boolean);
-  const queuedIds = new Set(queuedItems.map((q) => q.item_id));
+  const held = [...queuedItems, ...blockedItems];
+  const taken = held.map((q) => q.path).filter(Boolean);
+  const queuedIds = new Set(held.map((q) => q.item_id));
   const picked = [];
   if (!(needed > 0)) return picked;
   for (const c of candidates) {
@@ -124,7 +127,7 @@ export function renderTarget(root, view) {
   go.type = "button";
   go.addEventListener("click", () => {
     const needed = bytesNeeded(o, goal.mode, goal.value);
-    const picks = fill(candidates, needed, queue.queued());
+    const picks = fill(candidates, needed, queue.queued(), queue.archive.queued());
     if (picks.length) {
       queue.add(picks.map((c) => ({ item_id: c.item_id, name: c.name, path: c.path, size: c.size })));
     }

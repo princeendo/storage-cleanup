@@ -38,8 +38,20 @@ function scoreCell(score) {
 
 // What checking a row queues: the item itself, or a roll-up's members.
 function selectable(row) {
-  if (row.item_id) return row.removable ? [row] : [];
+  if (row.item_id) return row.removable && (row.action !== "archive" || row.path) ? [row] : [];
   return (row.children ?? []).flatMap(selectable);
+}
+
+// Archive recommendations go to the Archive queue, the rest to Delete.
+function queueFor(row) {
+  return row.action === "archive" ? queue.archive : queue;
+}
+
+function addRows(rows) {
+  for (const target of [queue, queue.archive]) {
+    const mine = rows.filter((r) => queueFor(r) === target);
+    if (mine.length) target.add(mine.map(toEntry));
+  }
 }
 
 function toEntry(row) {
@@ -52,19 +64,24 @@ function checkCell(row) {
   if (!targets.length) return td;
   const box = el("input");
   box.type = "checkbox";
-  box.setAttribute("aria-label", `Queue ${row.name} for deletion`);
+  const archiving = targets.every((t) => t.action === "archive");
+  box.setAttribute("aria-label", `Queue ${row.name} for ${archiving ? "archiving" : "removal"}`);
   const sync = () => {
-    const count = targets.filter((t) => queue.has(t.item_id)).length;
+    const count = targets.filter((t) => queueFor(t).has(t.item_id)).length;
     box.checked = count === targets.length;
     box.indeterminate = count > 0 && count < targets.length;
   };
   sync();
   box.addEventListener("click", (event) => event.stopPropagation());
   box.addEventListener("change", () => {
-    if (box.checked) queue.add(targets.map(toEntry));
-    else queue.remove(targets.map((t) => t.item_id));
+    if (box.checked) addRows(targets);
+    else {
+      queue.remove(targets.map((t) => t.item_id));
+      queue.archive.remove(targets.map((t) => t.item_id));
+    }
   });
   queue.onChange(sync);
+  queue.archive.onChange(sync);
   td.append(box);
   return td;
 }
@@ -146,7 +163,7 @@ export function renderRecommendations(el_, view, onSelect) {
   const summary = document.getElementById("recs-summary");
   const o = view.overview;
   summary.textContent = all.length
-    ? `${o.recommendation_count} recommendations · ${formatBytes(o.reclaimable_bytes)} could be reclaimed. Check items to add them to the Delete queue.`
+    ? `${o.recommendation_count} recommendations · ${formatBytes(o.reclaimable_bytes)} could be reclaimed. Check items to add them to the Archive or Delete queue.`
     : "";
   el_.replaceChildren();
   if (!all.length) {
@@ -197,9 +214,9 @@ export function renderRecommendations(el_, view, onSelect) {
   table.append(head, body);
   scroller.append(table);
   const empty = el("p", "empty", "No recommendations match these filters.");
-  const selectShown = el("button", "show-all", "Queue all shown for deletion");
+  const selectShown = el("button", "show-all", "Queue all shown");
   selectShown.type = "button";
-  selectShown.addEventListener("click", () => queue.add(all.filter(matches).flatMap(selectable).map(toEntry)));
+  selectShown.addEventListener("click", () => addRows(all.filter(matches).flatMap(selectable)));
   bar.append(selectShown);
   el_.append(bar, scroller, empty);
 

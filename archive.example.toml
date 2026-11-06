@@ -1,0 +1,23 @@
+# Copy this file to local/archive.toml and fill in your own values.
+# local/ is ignored by git; never commit real host names, IPs, or UUIDs.
+
+# Addresses to try, in order (for example a LAN name, then a VPN address).
+hosts = ["homelab.example.lan", "192.0.2.10"]
+user = "archiver"
+key = "~/.ssh/id_archive"
+
+# `hostname` on the homelab must print this, or the run stops.
+expected_hostname = "homelab"
+
+# The archive disk: where it mounts and its filesystem UUID
+# (find it on the homelab with: findmnt -no UUID --mountpoint <mount_point>).
+mount_point = "/mnt/HD/Seagate22TB"
+fs_uuid = "00000000-0000-0000-0000-000000000000"
+
+# Archiving only writes under allowed_root; location is this Mac's folder in it.
+allowed_root = "/mnt/HD/Seagate22TB/mac-archive"
+location = "/mnt/HD/Seagate22TB/mac-archive/my-mac"
+
+# Owner and group given to archived files on the homelab.
+owner = "archiver"
+group = "users"

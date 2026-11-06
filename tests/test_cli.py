@@ -105,3 +105,70 @@ def test_cli_serve_findings_flag_missing_file_exits_2(
     )
     assert code == 2
     assert f"Cannot read findings {missing}" in capsys.readouterr().err
+
+
+def _archive_config(tmp_path: Path) -> Path:
+    path = tmp_path / "archive.toml"
+    path.write_text(
+        'hosts = ["nas.example"]\nuser = "u"\nkey = "/keys/k"\n'
+        'expected_hostname = "nas"\nmount_point = "/mnt/d"\n'
+        'fs_uuid = "uuid-1"\nallowed_root = "/mnt/d/a"\n'
+        'location = "/mnt/d/a/x"\nowner = "u"\ngroup = "g"\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_archive_check_prints_host_and_free_space(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import shlex
+
+    from storage_cleanup.scan.context import CommandResult
+
+    answers = {
+        "hostname": "nas\n",
+        shlex.join(
+            ["sudo", "-n", "findmnt", "-no", "UUID", "--mountpoint", "/mnt/d"]
+        ): "uuid-1\n",
+        shlex.join(
+            ["sudo", "-n", "df", "-B1", "--output=avail", "--", "/mnt/d"]
+        ): "Avail\n2147483648\n",
+    }
+
+    def fake(args: Any, timeout: float) -> CommandResult:
+        out = answers.get(args[-1])
+        return CommandResult(0, out, "") if out else CommandResult(127, "", "?")
+
+    monkeypatch.setattr(cli, "ssh_runner", fake)
+    assert main(["archive", "check", "--config", str(_archive_config(tmp_path))]) == 0
+    out = capsys.readouterr().out
+    assert "nas.example" in out
+    assert "2.0 GiB" in out
+
+
+def test_archive_check_without_config_says_how_to_make_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["archive", "check", "--config", str(tmp_path / "none.toml")]) == 2
+    err = capsys.readouterr().err
+    assert "archive.example.toml" in err
+    assert "local/archive.toml" in err
+
+
+def test_archive_check_reports_remote_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from storage_cleanup.scan.context import CommandResult
+
+    monkeypatch.setattr(
+        cli,
+        "ssh_runner",
+        lambda args, timeout: CommandResult(255, "", "Permission denied"),
+    )
+    assert main(["archive", "check", "--config", str(_archive_config(tmp_path))]) == 2
+    assert "refused the SSH key" in capsys.readouterr().err

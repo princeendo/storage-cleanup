@@ -18,7 +18,7 @@
   <nav class="tabs" role="tablist" aria-label="Views">
     <button role="tab" aria-selected="true" data-tab="overview" aria-controls="overview">Overview</button>
     <button role="tab" aria-selected="false" data-tab="recommendations" aria-controls="recommendations">Recommendations</button>
-    <button role="tab" aria-selected="false" disabled>Archive<span class="soon">coming soon</span></button>
+    <button role="tab" aria-selected="false" data-tab="archive" aria-controls="archive">Archive</button>
     <button role="tab" aria-selected="false" data-tab="delete" aria-controls="delete">Delete</button>
   </nav>
 
@@ -75,6 +75,14 @@
       <p class="lede" id="recs-summary"></p>
       <div id="target-body"></div>
       <div id="recs-body"></div>
+    </section>
+  </main>
+
+  <main id="archive" role="tabpanel" hidden>
+    <section class="card">
+      <h2>Archive</h2>
+      <p class="lede">Copy items to your homelab, verify them, then move the local copy to the Trash.</p>
+      <div id="archive-body"></div>
     </section>
   </main>
 

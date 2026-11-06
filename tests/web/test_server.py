@@ -622,3 +622,211 @@ def test_unreadable_previous_scan_is_skipped(tmp_path: Path) -> None:
     view: Any = load_view(new, 0.0)
     assert view["growth"] is None
     assert len(view["history"]) == 1
+
+
+# --- Archive endpoints ------------------------------------------------------
+
+
+def archive_config() -> Any:
+    from storage_cleanup.actions.archive_config import ArchiveConfig
+
+    return ArchiveConfig(
+        hosts=("lab.example",),
+        user="u",
+        key=Path("/k"),
+        expected_hostname="lab",
+        mount_point="/srv/archive",
+        fs_uuid="uuid",
+        allowed_root="/srv/archive",
+        location="/srv/archive/mac",
+        owner="o",
+        group="g",
+    )
+
+
+def archive_server(scan_path: Path, config: Any) -> Any:
+    srv, _ = make_server(
+        scan_path,
+        token=TOKEN,
+        runner=FakeRunner(),
+        brew_prefix=None,
+        archive_config=config,
+    )
+    thread = threading.Thread(
+        target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    return srv
+
+
+@pytest.fixture
+def archive_sandbox(sandbox: Any) -> Iterator[tuple[Any, list[Path]]]:
+    old, _, files, _ = sandbox
+    srv = archive_server(old.scan_path, archive_config())
+    yield srv, files
+    srv.shutdown()
+    srv.server_close()
+
+
+def archive_body(srv: Any, files: list[Path], **extra: Any) -> dict[str, Any]:
+    return {
+        "item_ids": ids_of(srv, files),
+        "permanent": False,
+        "action": "archive",
+        **extra,
+    }
+
+
+def test_archive_plan_uses_default_location(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    status, plan = post(srv, "/api/plan", archive_body(srv, files))
+    assert status == 200
+    assert plan["location"] == "/srv/archive/mac"
+    assert {e["method"] for e in plan["entries"]} == {"archive"}
+    assert plan["trash_bytes"] == sum(e["size"] for e in plan["entries"])
+    assert all(f.exists() for f in files)
+
+
+def test_archive_plan_accepts_given_location(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    _, plan = post(
+        srv, "/api/plan", archive_body(srv, files, location="/srv/archive/x")
+    )
+    assert plan["location"] == "/srv/archive/x"
+
+
+def test_archive_without_config_is_400(sandbox: Any) -> None:
+    srv, _, files, _ = sandbox
+    status, message = post(srv, "/api/plan", archive_body(srv, files))
+    assert status == 400
+    assert message == (
+        "Archive is not set up: copy archive.example.toml to local/archive.toml."
+    )
+
+
+@pytest.mark.parametrize(
+    "location", ["/srv/archive/../x", "/etc/x", "/srv/archive/it's"]
+)
+def test_archive_bad_location_is_400(archive_sandbox: Any, location: str) -> None:
+    from storage_cleanup.actions.archive_config import check_location
+
+    srv, files = archive_sandbox
+    status, message = post(
+        srv, "/api/plan", archive_body(srv, files, location=location)
+    )
+    assert status == 400
+    assert message == check_location(archive_config(), location)
+
+
+def test_archive_permanent_is_400(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    status, _ = post(srv, "/api/plan", archive_body(srv, files, permanent=True))
+    assert status == 400
+
+
+def test_bad_action_is_400(sandbox: Any) -> None:
+    srv, _, files, _ = sandbox
+    body = {"item_ids": ids_of(srv, files), "permanent": False, "action": "zip"}
+    assert post(srv, "/api/plan", body)[0] == 400
+
+
+def lab_server(scan_path: Path, lab: Any) -> Any:
+    from tests.actions.test_run import MovingTrash
+
+    srv, _ = make_server(
+        scan_path,
+        token=TOKEN,
+        runner=MovingTrash(),
+        brew_prefix=None,
+        archive_config=archive_config(),
+        remote_runner=lab,
+    )
+    thread = threading.Thread(
+        target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    return srv
+
+
+@pytest.fixture
+def lab_sandbox(sandbox: Any) -> Iterator[tuple[Any, Any, list[Path], Path]]:
+    from tests.actions.test_archive import FakeLab
+
+    old, _, files, tmp_path = sandbox
+    lab = FakeLab(tmp_path / "lab", hostname="lab", uuid="uuid")
+    srv = lab_server(old.scan_path, lab)
+    yield srv, lab, files, tmp_path
+    srv.shutdown()
+    srv.server_close()
+
+
+def test_archive_run_checks_plan_id_first(lab_sandbox: Any) -> None:
+    srv, lab, files, _ = lab_sandbox
+    status, _ = post(srv, "/api/run", {**archive_body(srv, files), "plan_id": "x"})
+    assert status == 409
+    assert lab.calls == []
+    assert all(f.exists() for f in files)
+
+
+def test_archive_run_returns_the_result(lab_sandbox: Any) -> None:
+    srv, lab, files, tmp_path = lab_sandbox
+    body = archive_body(srv, files[:2])
+    _, plan = post(srv, "/api/plan", body)
+    status, result = post(srv, "/api/run", {**body, "plan_id": plan["plan_id"]})
+    assert status == 200
+    assert [r["status"] for r in result["results"]] == ["done", "done"]
+    assert result["archived_bytes"] == plan["total_bytes"]
+    assert result["archive_batch"].startswith("/srv/archive/mac/")
+    assert not files[0].exists() and not files[1].exists() and files[2].exists()
+    assert Path(result["log_path"]).parent == tmp_path / "reports" / "actions"
+    batch_name = result["archive_batch"].rsplit("/", 1)[1]
+    assert (tmp_path / "reports" / "archives" / f"{batch_name}.json").is_file()
+    assert lab.calls[0] == ["hostname"]
+
+
+def test_archive_run_honours_the_run_lock(lab_sandbox: Any) -> None:
+    srv, lab, files, _ = lab_sandbox
+    body = archive_body(srv, files)
+    _, plan = post(srv, "/api/plan", body)
+    srv.run_lock.acquire()
+    try:
+        status, message = post(srv, "/api/run", {**body, "plan_id": plan["plan_id"]})
+    finally:
+        srv.run_lock.release()
+    assert (status, message) == (409, "Another run is in progress.")
+    assert lab.calls == []
+    assert all(f.exists() for f in files)
+
+
+def test_archive_run_errors_come_back_as_json(
+    lab_sandbox: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from storage_cleanup.web import server as server_module
+
+    def boom(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(server_module, "run_archive", boom)
+    srv, _lab, files, _ = lab_sandbox
+    body = archive_body(srv, files)
+    _, plan = post(srv, "/api/plan", body)
+    status, message = post(srv, "/api/run", {**body, "plan_id": plan["plan_id"]})
+    assert status == 500
+    assert "disk on fire" in message
+    assert not srv.run_lock.locked()
+
+
+def test_archive_manifest_dir_sits_beside_actions(tmp_path: Path) -> None:
+    from storage_cleanup.web.server import action_log_dir, archive_manifest_dir
+
+    scan = tmp_path / "reports" / "scans" / "S.json"
+    assert archive_manifest_dir(scan) == tmp_path / "reports" / "archives"
+    assert archive_manifest_dir(scan).parent == action_log_dir(scan).parent
+
+
+def test_view_reports_archive_state(archive_sandbox: Any, server: Any) -> None:
+    srv, _ = archive_sandbox
+    on = json.loads(request(srv, "/api/view").read())["archive"]
+    assert on == {"configured": True, "location": "/srv/archive/mac"}
+    off = json.loads(request(server, "/api/view").read())["archive"]
+    assert off == {"configured": False, "location": None}

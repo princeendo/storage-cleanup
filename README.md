@@ -128,6 +128,76 @@ Nothing is removed until you confirm an exact plan.
 It asks Finder to empty the Trash, so macOS may ask once whether your terminal
 may control Finder. If you say no, empty the Trash in Finder instead.
 
+## Archiving to the homelab
+
+Archive copies an item to your homelab, proves the copy matches, and only then
+moves the local item to the Trash. It is optional and off until you set it up.
+
+### Setup
+
+1. Copy `archive.example.toml` to `local/archive.toml` (git ignores `local/`)
+   and fill it in:
+   - `hosts`: addresses to try in order, for example a LAN name and then a VPN
+     address. The first one that answers is used.
+   - `user` and `key`: the homelab account and its SSH key (see Access below).
+   - `expected_hostname`: what `hostname` must print on the homelab. If it
+     differs, the run stops.
+   - `mount_point` and `fs_uuid`: where the archive disk mounts and its
+     filesystem UUID. The disk must be mounted and have that UUID, or the run
+     stops.
+   - `allowed_root`: the only folder Archive writes under. `location` is this
+     Mac's folder inside it.
+   - `owner` and `group`: who owns the archived files on the homelab.
+2. Run `uv run storage-cleanup archive check`. It is read-only: it connects,
+   checks the host name and the disk, and prints the free space.
+
+### What happens
+
+1. **Queue.** Check items on the Recommendations tab (archive recommendations
+   go to the Archive queue), or open an item's details and choose "Add to
+   Archive queue".
+2. **Review.** On the Archive tab, "Review…" shows every path, its size, and
+   the location on the homelab. Nothing is copied until you confirm.
+3. **Copy.** Each item is copied with rsync into the batch folder
+   `<location>/<UTC timestamp>/`, under its original path. The copy is
+   listed on the homelab and compared with the original by SHA-256 on both
+   ends, including link targets and folders, and only then moved into place.
+4. **Trash.** Right before the Trash, the item and the disk are checked again.
+   Only then does the local copy go to the Trash, so Put Back still works.
+5. **Failures.** A copy that does not verify stays in the batch's `.incoming/`
+   folder and is reported. The local item is left untouched.
+
+### Restoring
+
+The batch's `README.md` on the homelab has a restore command for each item
+(`rsync -rl`). File modes and modification times are not restored.
+`MANIFEST.json` lists every file with its size and SHA-256; a copy is kept in
+`reports/archives/`.
+
+### What is not archived
+
+- Docker and Homebrew items.
+- Names with control characters.
+- Sockets, FIFOs, and devices.
+- Extended attributes and Finder tags are not copied.
+- Files land with mode 660 (folders 2770), so executable bits are not kept.
+
+### Access
+
+- The tool uses the homelab's existing maintenance account and SSH key, the
+  setup from the `remote_server_maintenance` repository.
+- Every remote command except `hostname` runs with `sudo -n`.
+- It sends only these commands: `hostname`, `findmnt`, `df`, `install -d`,
+  `mkdir -p`, `mv -n`, `chown`, `find` (only with `-exec chmod`), `rmdir`, one
+  fixed listing script, and `rsync`.
+- It never removes anything on the homelab.
+- It always uses `IdentitiesOnly`, `BatchMode` and `StrictHostKeyChecking=yes`
+  (whatever `~/.ssh/config` says), and stops on any host-key or identity
+  problem. A stalled connection ends after about two minutes
+  (`ServerAliveInterval=30`, `ServerAliveCountMax=4`).
+- Right before an item goes to the Trash, it checks again that the folder
+  holding the copy is on the archive disk (`findmnt --target`).
+
 ## Reaching a free-space target
 
 On the Recommendations tab, target mode helps you pick what to remove to reach

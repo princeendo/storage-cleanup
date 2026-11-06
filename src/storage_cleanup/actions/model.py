@@ -11,6 +11,7 @@ from storage_cleanup.scan.model import JsonValue
 class Method(StrEnum):
     TRASH = "trash"
     DELETE = "delete"
+    ARCHIVE = "archive"
     DOCKER_IMAGE = "docker-image-rm"
     DOCKER_BUILD_CACHE = "docker-builder-prune"
     BREW_FORMULA = "brew-uninstall"
@@ -55,6 +56,7 @@ class ActionPlan:
     total_bytes: int
     trash_bytes: int
     freed_bytes: int
+    location: str | None = None
 
 
 def plan_id(plan: ActionPlan) -> str:
@@ -62,6 +64,7 @@ def plan_id(plan: ActionPlan) -> str:
     body = {
         "scan": plan.scan,
         "permanent": plan.permanent,
+        "location": plan.location,
         # Path and size too: an in-place targeted rescan must invalidate a review.
         "entries": sorted(
             [e.item_id, e.method.value, e.path or "", e.size_bytes]
@@ -76,6 +79,7 @@ def plan_to_json(plan: ActionPlan) -> dict[str, JsonValue]:
         "plan_id": plan_id(plan),
         "scan": plan.scan,
         "permanent": plan.permanent,
+        "location": plan.location,
         "entries": [
             {
                 "item_id": e.item_id,

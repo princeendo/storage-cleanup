@@ -203,3 +203,70 @@ def test_roots_and_paths_outside_them_are_refused_at_plan_time() -> None:
     outside = "Outside the folders this tool may change."
     assert reasons == {home.id: outside, apps.id: outside, elsewhere.id: outside}
     assert {e.item_id for e in plan.entries} == {FILE.id, FORMULA.id}
+
+
+# --- Archive plans ----------------------------------------------------------
+
+NEWLINE = path_item("/h/Downloads/bad\nname.dmg", MIB, ("downloads",), kind="file")
+LOCATION = "/srv/archive/mac"
+
+
+def archive_plan(ids: list[str], location: str | None = LOCATION):  # type: ignore[no-untyped-def]
+    s = scan_of([*scan().items, NEWLINE], used=100 * GIB)
+    return build_plan(
+        s, "S.json", ids, permanent=False, action="archive", location=location
+    )
+
+
+def test_archive_plan_for_folder_and_file() -> None:
+    plan = archive_plan([FOLDER.id, FILE.id])
+    assert {e.item_id: e.method for e in plan.entries} == {
+        FOLDER.id: Method.ARCHIVE,
+        FILE.id: Method.ARCHIVE,
+    }
+    assert all(
+        e.undo
+        == "A verified copy stays on the homelab; Put Back from the Trash in Finder."
+        for e in plan.entries
+    )
+    assert plan.location == LOCATION
+    assert plan.trash_bytes == 4 * GIB
+    assert plan.freed_bytes == 0
+    assert plan.total_bytes == 4 * GIB
+
+
+def test_archive_refuses_non_path_items() -> None:
+    plan = archive_plan([IMAGE.id, FORMULA.id, CASK.id])
+    assert not plan.entries
+    assert {r.reason for r in plan.refused} == {
+        "Only files and folders can be archived."
+    }
+
+
+def test_archive_refuses_protected_and_nested_and_control_chars() -> None:
+    plan = archive_plan([MAIL.id, FOLDER.id, CHILD.id, NEWLINE.id])
+    reasons = {r.item_id: r.reason for r in plan.refused}
+    assert reasons[MAIL.id] == "Protected: Mail"
+    assert reasons[CHILD.id] == f"Already included in {FOLDER.name}."
+    assert reasons[NEWLINE.id] == (
+        "Its name has characters the archive cannot copy safely."
+    )
+    assert [e.item_id for e in plan.entries] == [FOLDER.id]
+
+
+def test_archive_refuses_outside_roots() -> None:
+    outside = path_item("/elsewhere/x", MIB, kind="folder")
+    s = scan_of([outside])
+    plan = build_plan(
+        s, "S.json", [outside.id], permanent=False, action="archive", location=LOCATION
+    )
+    assert plan.refused[0].reason == "Outside the folders this tool may change."
+
+
+def test_plan_id_depends_on_location_and_action() -> None:
+    a = archive_plan([FILE.id], "/srv/archive/a")
+    b = archive_plan([FILE.id], "/srv/archive/b")
+    trash = build_plan(scan(), "S.json", [FILE.id], permanent=False)
+    assert len({plan_id(a), plan_id(b), plan_id(trash)}) == 3
+    assert plan_to_json(a)["location"] == "/srv/archive/a"
+    assert plan_to_json(trash)["location"] is None

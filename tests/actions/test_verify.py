@@ -244,3 +244,14 @@ def test_file_replaced_by_link_is_skipped(tmp_path: Path) -> None:
     assert verify_entry(entry_for(scan, big), scan, brew_prefix=None) == (
         "Is a link; there is nothing here to free."
     )
+
+
+def test_archive_entries_get_the_full_walk(tmp_path: Path) -> None:
+    home = tmp_path / "h"
+    folder = home / "Movies"
+    make_file(folder / "a.mov", 50_000)
+    scan = scan_paths(home, [folder])
+    entry = replace(entry_for(scan, folder), method=Method.ARCHIVE)
+    assert verify_entry(entry, scan, brew_prefix=None) is None
+    shutil.rmtree(folder)
+    assert verify_entry(entry, scan, brew_prefix=None) == "No longer exists."

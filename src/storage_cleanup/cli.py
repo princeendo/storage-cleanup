@@ -8,6 +8,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from storage_cleanup import __version__, inspect_cmd
+from storage_cleanup.actions.archive_config import DEFAULT_CONFIG_PATH, load_config
+from storage_cleanup.actions.remote import (
+    RemoteError,
+    check_storage,
+    connect,
+    ssh_runner,
+)
 from storage_cleanup.findings import (
     findings_path_for,
     parse_findings,
@@ -102,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Agent findings file (default: the one named after the scan).",
     )
+    serve.add_argument(
+        "--archive-config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Homelab settings for Archive (default: local/archive.toml).",
+    )
     inspect = commands.add_parser(
         "inspect", help="Ask focused questions about a scan (for agents)."
     )
@@ -145,6 +158,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("reports/scans"),
         help="Where to look for the latest scan (default: reports/scans).",
+    )
+
+    archive = commands.add_parser(
+        "archive", help="Copy items to the homelab (build step 5)."
+    )
+    archive_commands = archive.add_subparsers(dest="archive_command", required=True)
+    archive_check = archive_commands.add_parser(
+        "check", help="Test the homelab connection and disk (read-only)."
+    )
+    archive_check.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Homelab settings file (default: {DEFAULT_CONFIG_PATH}).",
     )
     return parser
 
@@ -244,6 +271,7 @@ def _serve(args: argparse.Namespace) -> int:
         port=args.port,
         open_browser=not args.no_open,
         findings_path=args.findings,
+        archive_config_path=args.archive_config,
     )
     return 0
 
@@ -298,6 +326,29 @@ def _scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _archive(args: argparse.Namespace) -> int:
+    if not args.config.is_file():
+        print(
+            f"No homelab settings at {args.config}. Copy archive.example.toml "
+            "to local/archive.toml and fill it in.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        config = load_config(args.config)
+        remote = connect(config, ssh_runner)
+        free = check_storage(remote, 0)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    except RemoteError as exc:
+        print(exc.message, file=sys.stderr)
+        return 2
+    print(f"Connected to {remote.host} ({config.expected_hostname}).")
+    print(f"Archive disk {config.mount_point}: {_gib(free)} free.")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -309,5 +360,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _findings(args)
     if args.command == "inspect":
         return _inspect(args)
+    if args.command == "archive":
+        return _archive(args)
     parser.print_help()
     return 0
