@@ -55,6 +55,8 @@ class ActionResult:
     moved_to_trash_bytes: int
     freed_bytes: int
     log_path: str
+    archived_bytes: int = 0
+    archive_batch: str | None = None
 
 
 def action_runner(args: Sequence[str]) -> CommandResult:

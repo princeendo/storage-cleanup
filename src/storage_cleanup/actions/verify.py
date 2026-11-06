@@ -153,7 +153,11 @@ def verify_entry(
     entry: PlanEntry, scan: Scan, *, brew_prefix: Path | None
 ) -> str | None:
     """None if it is still safe to act on this entry; otherwise why it is skipped."""
-    if entry.path is None or entry.method not in (Method.TRASH, Method.DELETE):
+    if entry.path is None or entry.method not in (
+        Method.TRASH,
+        Method.DELETE,
+        Method.ARCHIVE,
+    ):
         return None  # Docker and Homebrew: their own commands decide
     if link_in_path(entry.path):
         return LINK_IN_PATH

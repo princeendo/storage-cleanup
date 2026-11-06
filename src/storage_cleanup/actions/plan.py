@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from storage_cleanup.actions.model import (
     FREES_NOW,
@@ -15,6 +16,18 @@ from storage_cleanup.scan.model import Item, ItemKind, Scan
 
 NOT_REMOVABLE = "Not removable from the page."
 OUTSIDE_ROOTS = "Outside the folders this tool may change."
+ARCHIVE_ONLY_PATHS = "Only files and folders can be archived."
+ARCHIVE_BAD_NAME = "Its name has characters the archive cannot copy safely."
+_NON_PATH_KINDS = frozenset(
+    {
+        ItemKind.DOCKER_IMAGE,
+        ItemKind.DOCKER_BUILD_CACHE,
+        ItemKind.DOCKER_VOLUME,
+        ItemKind.DOCKER_TOTAL,
+        ItemKind.BREW_FORMULA,
+        ItemKind.BREW_CASK,
+    }
+)
 VOLUME_REASON = (
     "Docker volumes can hold data that cannot be recreated; remove them with "
     "Docker yourself."
@@ -44,6 +57,11 @@ def _undo(item: Item, method: Method) -> str:
             return "Put Back from the Trash in Finder."
         case Method.DELETE:
             return "Cannot be undone."
+        case Method.ARCHIVE:
+            return (
+                "A verified copy stays on the homelab; Put Back from the Trash "
+                "in Finder."
+            )
         case Method.DOCKER_IMAGE:
             return "Pull or build the image again."
         case Method.DOCKER_BUILD_CACHE:
@@ -100,6 +118,8 @@ def build_plan(
     *,
     permanent: bool,
     brew_prefix: Path | None = None,
+    action: Literal["delete", "archive"] = "delete",
+    location: str | None = None,
 ) -> ActionPlan:
     """The exact plan for these items: entries to act on, and refusals with reasons."""
     by_id = {i.id: i for i in scan.items}
@@ -127,6 +147,18 @@ def build_plan(
             refused.append(
                 Refusal(item_id, item.name, f"Protected: {item.protected_reason}")
             )
+            continue
+        if action == "archive":
+            if item.kind in _NON_PATH_KINDS or item.path is None:
+                refused.append(Refusal(item_id, item.name, ARCHIVE_ONLY_PATHS))
+                continue
+            if any(ord(c) < 32 or ord(c) == 127 for c in item.path):
+                refused.append(Refusal(item_id, item.name, ARCHIVE_BAD_NAME))
+                continue
+            if _outside_roots(item, scan, brew_prefix):
+                refused.append(Refusal(item_id, item.name, OUTSIDE_ROOTS))
+                continue
+            candidates.append((item, Method.ARCHIVE))
             continue
         if item.kind == ItemKind.DOCKER_VOLUME:
             refused.append(Refusal(item_id, item.name, VOLUME_REASON))
@@ -162,7 +194,9 @@ def build_plan(
             )
         )
 
-    trash = sum(e.size_bytes for e in entries if e.method == Method.TRASH)
+    trash = sum(
+        e.size_bytes for e in entries if e.method in (Method.TRASH, Method.ARCHIVE)
+    )
     freed = sum(e.size_bytes for e in entries if e.method in FREES_NOW)
     return ActionPlan(
         scan=scan_name,
@@ -172,4 +206,5 @@ def build_plan(
         total_bytes=trash + freed,
         trash_bytes=trash,
         freed_bytes=freed,
+        location=location if action == "archive" else None,
     )

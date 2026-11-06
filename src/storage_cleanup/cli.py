@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Agent findings file (default: the one named after the scan).",
     )
+    serve.add_argument(
+        "--archive-config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Homelab settings for Archive (default: local/archive.toml).",
+    )
     inspect = commands.add_parser(
         "inspect", help="Ask focused questions about a scan (for agents)."
     )
@@ -265,6 +271,7 @@ def _serve(args: argparse.Namespace) -> int:
         port=args.port,
         open_browser=not args.no_open,
         findings_path=args.findings,
+        archive_config_path=args.archive_config,
     )
     return 0
 

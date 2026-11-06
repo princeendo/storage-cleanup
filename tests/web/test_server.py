@@ -622,3 +622,129 @@ def test_unreadable_previous_scan_is_skipped(tmp_path: Path) -> None:
     view: Any = load_view(new, 0.0)
     assert view["growth"] is None
     assert len(view["history"]) == 1
+
+
+# --- Archive endpoints ------------------------------------------------------
+
+
+def archive_config() -> Any:
+    from storage_cleanup.actions.archive_config import ArchiveConfig
+
+    return ArchiveConfig(
+        hosts=("lab.example",),
+        user="u",
+        key=Path("/k"),
+        expected_hostname="lab",
+        mount_point="/srv/archive",
+        fs_uuid="uuid",
+        allowed_root="/srv/archive",
+        location="/srv/archive/mac",
+        owner="o",
+        group="g",
+    )
+
+
+def archive_server(scan_path: Path, config: Any) -> Any:
+    srv, _ = make_server(
+        scan_path,
+        token=TOKEN,
+        runner=FakeRunner(),
+        brew_prefix=None,
+        archive_config=config,
+    )
+    thread = threading.Thread(
+        target=srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    return srv
+
+
+@pytest.fixture
+def archive_sandbox(sandbox: Any) -> Iterator[tuple[Any, list[Path]]]:
+    old, _, files, _ = sandbox
+    srv = archive_server(old.scan_path, archive_config())
+    yield srv, files
+    srv.shutdown()
+    srv.server_close()
+
+
+def archive_body(srv: Any, files: list[Path], **extra: Any) -> dict[str, Any]:
+    return {
+        "item_ids": ids_of(srv, files),
+        "permanent": False,
+        "action": "archive",
+        **extra,
+    }
+
+
+def test_archive_plan_uses_default_location(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    status, plan = post(srv, "/api/plan", archive_body(srv, files))
+    assert status == 200
+    assert plan["location"] == "/srv/archive/mac"
+    assert {e["method"] for e in plan["entries"]} == {"archive"}
+    assert plan["trash_bytes"] == sum(e["size"] for e in plan["entries"])
+    assert all(f.exists() for f in files)
+
+
+def test_archive_plan_accepts_given_location(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    _, plan = post(
+        srv, "/api/plan", archive_body(srv, files, location="/srv/archive/x")
+    )
+    assert plan["location"] == "/srv/archive/x"
+
+
+def test_archive_without_config_is_400(sandbox: Any) -> None:
+    srv, _, files, _ = sandbox
+    status, message = post(srv, "/api/plan", archive_body(srv, files))
+    assert status == 400
+    assert message == (
+        "Archive is not set up: copy archive.example.toml to local/archive.toml."
+    )
+
+
+@pytest.mark.parametrize(
+    "location", ["/srv/archive/../x", "/etc/x", "/srv/archive/it's"]
+)
+def test_archive_bad_location_is_400(archive_sandbox: Any, location: str) -> None:
+    from storage_cleanup.actions.archive_config import check_location
+
+    srv, files = archive_sandbox
+    status, message = post(
+        srv, "/api/plan", archive_body(srv, files, location=location)
+    )
+    assert status == 400
+    assert message == check_location(archive_config(), location)
+
+
+def test_archive_permanent_is_400(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    status, _ = post(srv, "/api/plan", archive_body(srv, files, permanent=True))
+    assert status == 400
+
+
+def test_bad_action_is_400(sandbox: Any) -> None:
+    srv, _, files, _ = sandbox
+    body = {"item_ids": ids_of(srv, files), "permanent": False, "action": "zip"}
+    assert post(srv, "/api/plan", body)[0] == 400
+
+
+def test_archive_run_is_501_after_plan_check(archive_sandbox: Any) -> None:
+    srv, files = archive_sandbox
+    body = archive_body(srv, files)
+    status, _ = post(srv, "/api/run", {**body, "plan_id": "stale"})
+    assert status == 409
+    _, plan = post(srv, "/api/plan", body)
+    status, message = post(srv, "/api/run", {**body, "plan_id": plan["plan_id"]})
+    assert status == 501
+    assert message == "Archive runs arrive in the next task."
+    assert all(f.exists() for f in files)
+
+
+def test_view_reports_archive_state(archive_sandbox: Any, server: Any) -> None:
+    srv, _ = archive_sandbox
+    on = json.loads(request(srv, "/api/view").read())["archive"]
+    assert on == {"configured": True, "location": "/srv/archive/mac"}
+    off = json.loads(request(server, "/api/view").read())["archive"]
+    assert off == {"configured": False, "location": None}

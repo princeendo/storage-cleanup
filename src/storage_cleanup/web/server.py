@@ -15,8 +15,15 @@ from pathlib import Path
 from typing import Any, Final, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from storage_cleanup.actions.model import ActionPlan, plan_id, plan_to_json
+from storage_cleanup.actions.archive_config import (
+    DEFAULT_CONFIG_PATH,
+    ArchiveConfig,
+    check_location,
+    load_config,
+)
+from storage_cleanup.actions.model import ActionPlan, Method, plan_id, plan_to_json
 from storage_cleanup.actions.plan import build_plan
+from storage_cleanup.actions.remote import TimedRunner, ssh_runner
 from storage_cleanup.actions.run import action_runner, run_plan
 from storage_cleanup.actions.trash import empty_trash
 from storage_cleanup.findings import (
@@ -66,6 +73,9 @@ def _read_scan(path: Path) -> Scan:
 
 MAX_NOTED_PROBLEMS: Final = 3
 MAX_BODY_BYTES: Final = 1024 * 1024
+ARCHIVE_NOT_SET_UP: Final = (
+    "Archive is not set up: copy archive.example.toml to local/archive.toml."
+)
 PERMANENT_PHRASE: Final = "delete permanently"
 EMPTY_TRASH_PHRASE: Final = "empty trash"
 POST_ROUTES: Final = {
@@ -158,7 +168,11 @@ class ScanServer(ThreadingHTTPServer):
         findings_path: Path | None = None,
         runner: Runner = action_runner,
         brew_prefix: Path | None = None,
+        archive_config: ArchiveConfig | None = None,
+        remote_runner: TimedRunner = ssh_runner,
     ) -> None:
+        self.archive_config = archive_config
+        self.remote_runner = remote_runner
         self.scan_path = scan_path
         self.findings_path = findings_path
         self.token = token
@@ -281,6 +295,29 @@ class _Handler(BaseHTTPRequestHandler):
                 "Send item_ids (a list) and permanent (true/false).",
             )
             return None
+        action = body.get("action", "delete")
+        if action not in ("delete", "archive"):
+            self._json(HTTPStatus.BAD_REQUEST, 'action must be "delete" or "archive".')
+            return None
+        location: str | None = None
+        if action == "archive":
+            config = self.app.archive_config
+            if config is None:
+                self._json(HTTPStatus.BAD_REQUEST, ARCHIVE_NOT_SET_UP)
+                return None
+            if permanent:
+                self._json(HTTPStatus.BAD_REQUEST, "Archiving cannot be permanent.")
+                return None
+            location = body.get("location")
+            if location is None:
+                location = config.location
+            if not isinstance(location, str):
+                self._json(HTTPStatus.BAD_REQUEST, "location must be text.")
+                return None
+            problem = check_location(config, location)
+            if problem is not None:
+                self._json(HTTPStatus.BAD_REQUEST, problem)
+                return None
         try:
             scan = _read_scan(self.app.scan_path)
         except ValueError as exc:
@@ -292,6 +329,8 @@ class _Handler(BaseHTTPRequestHandler):
             ids,
             permanent=permanent,
             brew_prefix=self.app.brew_prefix,
+            action=action,
+            location=location,
         )
 
     def _post_plan(self, body: dict[str, Any]) -> None:
@@ -305,6 +344,12 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if body.get("plan_id") != plan_id(plan):
             self._json(HTTPStatus.CONFLICT, "The plan changed; review it again.")
+            return
+        if any(e.method == Method.ARCHIVE for e in plan.entries):
+            # Task 4 replaces this line with the real archive run.
+            self._json(
+                HTTPStatus.NOT_IMPLEMENTED, "Archive runs arrive in the next task."
+            )
             return
         if plan.permanent and body.get("confirm") != PERMANENT_PHRASE:
             self._json(
@@ -395,6 +440,11 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc).encode())
             return
+        config = self.app.archive_config
+        view["archive"] = {
+            "configured": config is not None,
+            "location": config.location if config is not None else None,
+        }
         body = json.dumps(view, ensure_ascii=True).encode()
         self._send(
             HTTPStatus.OK,
@@ -426,11 +476,22 @@ def make_server(
     findings_path: Path | None = None,
     runner: Runner = action_runner,
     brew_prefix: Path | str | None = "detect",
+    archive_config: ArchiveConfig | None = None,
+    remote_runner: TimedRunner = ssh_runner,
 ) -> tuple[ScanServer, str]:
     token = token or secrets.token_urlsafe(32)
     prefix = detect_brew_prefix() if brew_prefix == "detect" else brew_prefix
     assert prefix is None or isinstance(prefix, Path)
-    server = ScanServer(port, scan_path, token, findings_path, runner, prefix)
+    server = ScanServer(
+        port,
+        scan_path,
+        token,
+        findings_path,
+        runner,
+        prefix,
+        archive_config,
+        remote_runner,
+    )
     return server, token
 
 
@@ -444,10 +505,19 @@ def serve(
     port: int = 0,
     open_browser: bool = True,
     findings_path: Path | None = None,
+    archive_config_path: Path = DEFAULT_CONFIG_PATH,
 ) -> None:
     """Check the scan, print the private link, and serve until Ctrl-C."""
     load_scan(scan_path)
-    server, token = make_server(scan_path, port=port, findings_path=findings_path)
+    config: ArchiveConfig | None = None
+    if archive_config_path.is_file():
+        try:
+            config = load_config(archive_config_path)
+        except ValueError as exc:
+            print(f"{exc} Archive is off; Delete still works.", file=sys.stderr)
+    server, token = make_server(
+        scan_path, port=port, findings_path=findings_path, archive_config=config
+    )
     url = page_url(server, token)
     print(f"Storage Explorer is showing {scan_path}")
     print(f"Open this link (it only works on this Mac):\n  {url}")
