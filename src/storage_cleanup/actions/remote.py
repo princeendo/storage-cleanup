@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from typing import Final
 
 from storage_cleanup.actions.archive_config import ArchiveConfig
+from storage_cleanup.actions.manifest import LIST_SCRIPT
 from storage_cleanup.scan.context import CommandResult
 
-# "sh" is added by the listing task, for one exact script only.
+# "sh" is allowed for one exact argv only (the listing script); see _check_argv.
 REMOTE_PROGRAMS: Final = frozenset(
     {"hostname", "findmnt", "df", "install", "mkdir", "mv", "chown", "find", "rmdir"}
 )
@@ -57,6 +58,10 @@ def ssh_runner(args: Sequence[str], timeout: float) -> CommandResult:
 
 def _check_argv(argv: Sequence[str]) -> None:
     """Refuse anything but the allowed programs, and find's removing/writing forms."""
+    if argv and argv[0] == "sh":
+        if len(argv) == 5 and list(argv[:4]) == ["sh", "-c", LIST_SCRIPT, "sh"]:
+            return
+        raise ValueError("Only the listing script may run under sh.")
     if not argv or argv[0] not in REMOTE_PROGRAMS:
         raise ValueError(f"Not an allowed remote program: {list(argv)!r}")
     if "-delete" in argv:
