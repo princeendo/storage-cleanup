@@ -1,5 +1,6 @@
 import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
 import * as queue from "./queue.js";
+import { renderArchiveTab } from "./archive.js";
 import { renderDeleteTab } from "./delete.js";
 import { renderGrowth } from "./growth.js";
 import { renderProjects } from "./projects.js";
@@ -137,18 +138,26 @@ function showDetail(entry) {
   }
   for (const old of document.querySelectorAll("#detail .queue-button")) old.remove();
   if (entry.item_id && !entry.protected) {
-    const button = el("button", "show-all queue-button");
-    button.type = "button";
-    const label = () => {
-      button.textContent = queue.has(entry.item_id) ? "Remove from Delete queue" : "Add to Delete queue";
+    const queueButton = (target, word) => {
+      const button = el("button", "show-all queue-button");
+      button.type = "button";
+      button.textContent = target.has(entry.item_id) ? `Remove from ${word} queue` : `Add to ${word} queue`;
+      button.addEventListener("click", () => {
+        if (target.has(entry.item_id)) target.remove([entry.item_id]);
+        else target.add([{ item_id: entry.item_id, name: entry.name, path: entry.path, size: entry.size ?? entry.value }]);
+      });
+      // Adding to one queue removes the item from the other.
+      const refresh = () => {
+        button.textContent = target.has(entry.item_id) ? `Remove from ${word} queue` : `Add to ${word} queue`;
+      };
+      target.onChange(refresh);
+      queue.onChange(refresh);
+      queue.archive.onChange(refresh);
+      return button;
     };
-    label();
-    button.addEventListener("click", () => {
-      if (queue.has(entry.item_id)) queue.remove([entry.item_id]);
-      else queue.add([{ item_id: entry.item_id, name: entry.name, path: entry.path, size: entry.size ?? entry.value }]);
-      label();
-    });
-    $("detail").append(button);
+    // Only path items can be archived; the server refuses the rest too.
+    if (entry.path) $("detail").append(queueButton(queue.archive, "Archive"));
+    $("detail").append(queueButton(queue, "Delete"));
   }
   if (entry.protected) {
     $("detail").append(el("div", "status critical protected", "Protected: never removed by this tool"));
@@ -195,12 +204,17 @@ function findingsSection(view, onSelect) {
   }
 }
 
-const TABS = ["overview", "recommendations", "delete"];
+const TABS = ["overview", "recommendations", "archive", "delete"];
 
-function updateDeleteTab() {
-  const button = document.querySelector('nav.tabs [data-tab="delete"]');
-  const count = queue.queued().length;
-  button.textContent = count ? `Delete (${count})` : "Delete";
+function updateQueueTabs() {
+  for (const [tab, label, source] of [
+    ["archive", "Archive", queue.archive],
+    ["delete", "Delete", queue],
+  ]) {
+    const button = document.querySelector(`nav.tabs [data-tab="${tab}"]`);
+    const count = source.queued().length;
+    button.textContent = count ? `${label} (${count})` : label;
+  }
 }
 
 function switchTab(name) {
@@ -255,6 +269,10 @@ function targetSection(view) {
   renderTarget($("target-body"), view);
 }
 
+function archiveSection(view) {
+  renderArchiveTab($("archive-body"), view);
+}
+
 function deleteSection(view) {
   renderDeleteTab($("delete-body"), view);
 }
@@ -267,6 +285,7 @@ const sections = [
   projectsSection,
   targetSection,
   recommendationsSection,
+  archiveSection,
   deleteSection,
 ];
 
@@ -274,8 +293,9 @@ async function main() {
   for (const button of document.querySelectorAll("nav.tabs [data-tab]")) {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
   }
-  queue.onChange(updateDeleteTab);
-  updateDeleteTab();
+  queue.onChange(updateQueueTabs);
+  queue.archive.onChange(updateQueueTabs);
+  updateQueueTabs();
   switchTab(location.hash.slice(1));
   document.querySelector("#detail .close").addEventListener("click", closeDetail);
   document.querySelector("#skipped .icon-button").addEventListener("click", () => $("skipped").close());

@@ -1,103 +1,11 @@
 // The Delete tab: the queue, an exact review, confirmation, and results.
 // The server rebuilds and re-checks the plan; this page only asks and shows.
 import { formatBytes, formatDate } from "./format.js";
+import { button, el, entryList, openDialog, post, refusalList, resultsView } from "./actions-ui.js";
 import * as queue from "./queue.js";
 
 const PERMANENT_PHRASE = "delete permanently";
 const EMPTY_TRASH_PHRASE = "empty trash";
-const METHOD_LABELS = {
-  trash: "Move to Trash",
-  delete: "Delete permanently",
-  "docker-image-rm": "Docker: remove image",
-  "docker-builder-prune": "Docker: clear build cache",
-  "brew-uninstall": "Homebrew: uninstall",
-  "brew-uninstall-cask": "Homebrew: uninstall app",
-};
-
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined && text !== null) node.textContent = String(text);
-  return node;
-}
-
-function button(text, className, onClick) {
-  const b = el("button", className, text);
-  b.type = "button";
-  b.addEventListener("click", onClick);
-  return b;
-}
-
-async function post(url, body) {
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch (error) {
-    return {
-      status: 0,
-      data: `Could not reach the page's server (${error.message}). If a run was in progress, its log in reports/actions shows what was done.`,
-    };
-  }
-  let data = null;
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-  return { status: response.status, data };
-}
-
-// A modal dialog that returns focus to whatever opened it.
-function openDialog(build) {
-  const opener = document.activeElement;
-  const dialog = el("dialog", "action-dialog");
-  const close = () => {
-    dialog.close();
-    dialog.remove();
-    if (opener instanceof HTMLElement) opener.focus();
-  };
-  dialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    close();
-  });
-  build(dialog, close);
-  document.body.append(dialog);
-  dialog.showModal();
-  dialog.querySelector("button, input")?.focus();
-  return close;
-}
-
-function entryList(entries) {
-  const list = el("ul", "plan-list");
-  for (const entry of entries) {
-    const li = el("li");
-    const head = el("div", "plan-head");
-    head.append(
-      el("span", "plan-name", entry.name),
-      el("span", "plan-size", formatBytes(entry.size)),
-    );
-    li.append(head, el("div", "path", entry.path ?? ""));
-    li.append(el("div", "plan-how", `${METHOD_LABELS[entry.method] ?? entry.method} · ${entry.undo}`));
-    for (const warning of entry.warnings ?? []) li.append(el("div", "status critical", warning));
-    list.append(li);
-  }
-  return list;
-}
-
-function refusalList(refused) {
-  const list = el("ul", "plan-list refused");
-  for (const refusal of refused) {
-    const li = el("li");
-    li.append(el("div", "plan-name", refusal.name), el("div", "plan-how", refusal.reason));
-    list.append(li);
-  }
-  return list;
-}
 
 export function renderDeleteTab(root, view) {
   let permanent = false;
@@ -234,44 +142,18 @@ export function renderDeleteTab(root, view) {
     });
   }
 
-  function resultsView(result) {
-    const wrap = el("div", "results");
-    const done = result.results.filter((r) => r.status === "done").length;
-    wrap.append(
-      el("h3", null, `Done: ${done} of ${result.results.length}`),
-      el(
-        "p",
-        "plan-totals",
-        [
-          result.moved_to_trash_bytes
-            ? `Moved to the Trash: ${formatBytes(result.moved_to_trash_bytes)} (freed when the Trash is emptied).`
-            : "",
-          result.freed_bytes ? `Freed now: ${formatBytes(result.freed_bytes)}.` : "",
-        ]
-          .filter(Boolean)
-          .join(" ") || "Nothing was removed.",
-      ),
-      el("p", "plan-how", `Free space: ${formatBytes(result.free_before)} before, ${formatBytes(result.free_after)} after. Log: ${result.log_path}`),
-    );
-    const list = el("ul", "plan-list");
-    for (const r of result.results) {
-      const li = el("li", `result-${r.status}`);
-      const head = el("div", "plan-head");
-      head.append(el("span", "plan-name", r.name), el("span", `status ${r.status === "done" ? "good" : "critical"}`, r.status));
-      li.append(head, el("div", "path", r.path ?? ""), el("div", "plan-how", r.detail));
-      list.append(li);
-    }
-    wrap.append(list, button("Back to the queue", "show-all", () => {
-      lastResult = null;
-      draw();
-    }));
-    return wrap;
-  }
-
   function draw() {
     root.replaceChildren();
     if (lastResult) {
-      root.append(resultsView(lastResult));
+      root.append(
+        resultsView(lastResult, {
+          kind: "delete",
+          onBack: () => {
+            lastResult = null;
+            draw();
+          },
+        }),
+      );
       return;
     }
     const items = queue.queued();

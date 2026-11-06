@@ -147,7 +147,6 @@ nav.tabs button[aria-selected="true"] {
 }
 
 nav.tabs button:disabled { cursor: default; color: var(--ink-muted); }
-nav.tabs .soon { font-size: 11px; margin-left: 6px; color: var(--ink-muted); }
 
 .kpis {
   display: grid;
@@ -388,7 +387,7 @@ aside#detail .item-name { font-weight: 600; }
 .badge.source-agent { color: var(--ink); }
 .check-cell { width: 28px; }
 .check-cell input { width: 16px; height: 16px; accent-color: var(--accent); }
-aside#detail .queue-button { margin-top: 16px; }
+aside#detail .queue-button { margin-top: 16px; margin-right: 8px; }
 
 /* Delete tab and dialogs */
 .delete-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0 12px; }
@@ -412,6 +411,9 @@ dialog.action-dialog h3 { margin: 0 0 8px; font-size: 17px; }
 dialog.action-dialog h4 { margin: 16px 0 4px; font-size: 14px; color: var(--ink-2); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .confirm-label { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
+#archive-body .confirm-label { max-width: 560px; margin: 8px 0 4px; }
+#archive-body .confirm-input { width: 100%; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+#archive-body .confirm-input:disabled { opacity: 0.6; }
 .confirm-input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 0; box-shadow: inset 0 0 0 1px var(--ring); background: var(--surface); color: var(--ink); }
 .results h3 { margin: 0 0 6px; }
 
