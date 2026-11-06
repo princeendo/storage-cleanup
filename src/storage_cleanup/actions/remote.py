@@ -27,7 +27,22 @@ _HOST_KEY: Final = (
     "REMOTE HOST IDENTIFICATION HAS CHANGED",
 )
 _DEST: Final = re.compile(r"^[A-Za-z0-9._/-]+$")
-_SSH_OPTIONS: Final = ("-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes")
+# Host keys are checked whatever ~/.ssh/config says, and a stalled link ends
+# within about two minutes instead of holding the run for hours.
+_SSH_OPTIONS: Final = (
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ServerAliveInterval=30",
+    "-o",
+    "ServerAliveCountMax=4",
+)
 GIB: Final = 1024**3
 
 _FIND_RUNNERS: Final = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
@@ -92,12 +107,7 @@ class Remote:
         command = list(argv) if list(argv) == ["hostname"] else ["sudo", "-n", *argv]
         return [
             "/usr/bin/ssh",
-            "-o",
-            "IdentitiesOnly=yes",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
+            *_SSH_OPTIONS,
             "-i",
             str(self.config.key),
             f"{self.config.user}@{self.host}",
@@ -181,3 +191,14 @@ def check_storage(remote: Remote, need_bytes: int) -> int:
             f"{_gib(need_bytes)} needed)"
         )
     return free
+
+
+def check_target(remote: Remote, path: str) -> None:
+    """Check that the filesystem really holding ``path`` is the archive disk.
+
+    `check_storage` looks at the mount point; this catches a link or a remount
+    that put the written folder on another disk.
+    """
+    found = remote.call(["findmnt", "-no", "UUID", "--target", path])
+    if found.returncode != 0 or found.stdout.strip() != remote.config.fs_uuid:
+        raise RemoteError("The archive disk is not the expected one")

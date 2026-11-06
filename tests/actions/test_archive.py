@@ -187,6 +187,7 @@ def item_calls(n: int, path: Path) -> list[list[str]]:
         ["find", final, "-maxdepth", "0"],
         ["rmdir", "--", holder],
         *guard(),  # the disk is still the archive disk right before the trash
+        ["findmnt", "-no", "UUID", "--target", final],  # and it holds the copy
     ]
 
 
@@ -726,3 +727,85 @@ def test_disk_unmounted_before_the_trash_is_not_trashed(tmp_path: Path) -> None:
     # The batch files are not written into what may be an empty mountpoint.
     assert not any(c[0] in ("chown", "rsync") for c in lab.calls[at:])
     assert result.archived_bytes == 0
+
+
+# --- Final review fixes -------------------------------------------------------
+
+
+def test_copy_on_another_filesystem_is_not_trashed(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    final = final_of(paths[0])
+    lab.on(["findmnt", "-no", "UUID", "--target", final], ok("root-disk-uuid\n"))
+    result = run(tmp_path, archive_plan(scan, paths[:1]), scan, lab, trash)
+    [entry] = result.results
+    assert entry.status == "failed"
+    assert entry.detail == (
+        f"The archive disk is not the expected one; the homelab copy is in {final}"
+    )
+    assert trash.calls == []
+    assert paths[0].exists()
+
+
+def test_probe_timeout_counts_as_connection_lost(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    lab.on(["rsync", str(paths[0])], CommandResult(124, "", "timed out"))
+    probes = 0
+
+    def hostname(argv: list[str]) -> CommandResult:
+        nonlocal probes
+        probes += 1  # the first call is connect's
+        return ok("nas\n") if probes == 1 else CommandResult(124, "", "timed out")
+
+    lab.on(["hostname"], hostname)
+    result = run(tmp_path, archive_plan(scan, paths[:2]), scan, lab, trash)
+    assert [r.status for r in result.results] == ["failed", "skipped"]
+    assert result.results[1].detail == "Connection lost"
+    assert lab.calls[-1] == ["hostname"]
+    assert trash.calls == []
+
+
+def test_batch_problems_are_returned_as_notes(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    original = lab.copy
+
+    def copy(source: str, dest_dir: str) -> CommandResult:
+        if Path(source).name == "README.md":
+            return CommandResult(23, "", "rsync: write failed")
+        return original(source, dest_dir)
+
+    lab.copy = copy  # type: ignore[method-assign]
+    result = run(tmp_path, archive_plan(scan, paths[:1]), scan, lab, trash)
+    assert [r.status for r in result.results] == ["done"]
+    assert result.notes == ("Could not upload README.md: rsync: write failed",)
+    log = json.loads(Path(result.log_path).read_text())
+    assert log["notes"] == list(result.notes)
+
+
+def test_lost_connection_is_a_note(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+
+    def drop(argv: list[str]) -> CommandResult:
+        lab.lost = True
+        return CommandResult(255, "", "Connection reset by peer")
+
+    lab.on(["rsync", str(paths[1])], drop)
+    result = run(tmp_path, archive_plan(scan, paths[:2]), scan, lab, trash)
+    assert [r.status for r in result.results] == ["done", "failed"]
+    assert len(result.notes) == 1
+    assert result.notes[0].startswith("Connection lost, so MANIFEST.json")
+
+
+def test_clean_run_has_no_notes(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    result = run(
+        tmp_path,
+        archive_plan(scan, paths[:1]),
+        scan,
+        FakeLab(tmp_path / "lab"),
+        MovingTrash(),
+    )
+    assert result.notes == ()

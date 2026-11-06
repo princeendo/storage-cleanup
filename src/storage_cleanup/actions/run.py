@@ -57,6 +57,7 @@ class ActionResult:
     log_path: str
     archived_bytes: int = 0
     archive_batch: str | None = None
+    notes: tuple[str, ...] = ()  # batch-level problems the page must show
 
 
 def action_runner(args: Sequence[str]) -> CommandResult:

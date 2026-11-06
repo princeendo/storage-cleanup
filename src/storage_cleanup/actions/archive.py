@@ -36,6 +36,7 @@ from storage_cleanup.actions.remote import (
     RemoteError,
     TimedRunner,
     check_storage,
+    check_target,
     connect,
 )
 from storage_cleanup.actions.run import (
@@ -56,7 +57,8 @@ ARCHIVE_TIMEOUT_SECONDS: Final = 6 * 3600  # per rsync, and per remote listing
 FREE_MARGIN_BYTES: Final = 1024**3
 UPLOAD_TIMEOUT_SECONDS: Final = 600  # MANIFEST.json and README.md
 PROBE_TIMEOUT_SECONDS: Final = 30
-CONNECTION_LOST_EXIT: Final = 255  # what ssh exits with when it cannot connect
+# ssh exits 255 when it cannot connect; ssh_runner gives 124 on a timeout.
+CONNECTION_LOST_EXITS: Final = frozenset({255, 124})
 DONE_DETAIL: Final = "Copied to the homelab, checked, and moved to the Trash."
 CONNECTION_LOST: Final = "Connection lost"
 NOT_IN_PLACE: Final = "Could not move it into place on the homelab; the copy is in {}"
@@ -162,6 +164,7 @@ def _archive_one(
     # Hours may have passed since verify and the hashing: check everything again.
     try:
         check_storage(remote, 0)  # an unmounted disk means the copy is elsewhere
+        check_target(remote, final)  # and the copy itself is on that disk
     except RemoteError as exc:
         detail = f"{exc.message[:DETAIL_LIMIT]}; the homelab copy is in {final}"
         return _Outcome("failed", detail, remote_failed=True)
@@ -375,7 +378,7 @@ def run_archive(
         record("running")
         if outcome.remote_failed:
             probe = remote.call(["hostname"], timeout=PROBE_TIMEOUT_SECONDS)
-            if probe.returncode == CONNECTION_LOST_EXIT:
+            if probe.returncode in CONNECTION_LOST_EXITS:
                 stop = CONNECTION_LOST
 
     if remote is not None and batch is not None and stop != CONNECTION_LOST:
@@ -429,6 +432,7 @@ def run_archive(
         log_path=str(log),
         archived_bytes=done,
         archive_batch=batch,
+        notes=tuple(notes),
     )
     _write_log(
         log,
@@ -438,7 +442,6 @@ def run_archive(
             "scan": plan.scan,
             "location": plan.location,
             "host": remote.host if remote is not None else None,
-            "notes": notes,
         },
     )
     return result

@@ -121,6 +121,8 @@ export function resultsView(result, { kind = "delete", onBack } = {}) {
   if (archive && result.archive_batch) {
     wrap.append(el("p", "plan-how", `Homelab folder: ${result.archive_batch}`));
   }
+  // Batch-level problems (for example a missing README on the homelab).
+  for (const note of result.notes ?? []) wrap.append(el("p", "status critical", note));
   wrap.append(
     el("p", "plan-how", `Free space: ${formatBytes(result.free_before)} before, ${formatBytes(result.free_after)} after. Log: ${result.log_path}`),
   );

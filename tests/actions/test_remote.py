@@ -64,7 +64,13 @@ def test_ssh_args_exact() -> None:
         "-o",
         "BatchMode=yes",
         "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
         "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=30",
+        "-o",
+        "ServerAliveCountMax=4",
         "-i",
         "/keys/k",
         "archiver@one.example",
@@ -105,7 +111,9 @@ def test_rsync_args_exact() -> None:
         "-a",
         "--rsync-path=sudo -n rsync",
         "-e",
-        "/usr/bin/ssh -o IdentitiesOnly=yes -o BatchMode=yes -i /keys/k",
+        "/usr/bin/ssh -o IdentitiesOnly=yes -o BatchMode=yes"
+        " -o StrictHostKeyChecking=yes -o ConnectTimeout=10"
+        " -o ServerAliveInterval=30 -o ServerAliveCountMax=4 -i /keys/k",
         "--",
         "/Users/me/Big",
         "archiver@one.example:/mnt/HD/Disk1/a/",
@@ -304,3 +312,37 @@ def test_find_exec_chmod_still_works() -> None:
     ]  # fmt: skip
     last = remote_for(FakeSsh()).ssh_args(argv)[-1]
     assert shlex.split(last) == ["sudo", "-n", *argv]
+
+
+def test_check_target_accepts_the_archive_disk() -> None:
+    from storage_cleanup.actions.remote import check_target
+
+    fake = FakeSsh(
+        {
+            ("one.example", line("findmnt", "-no", "UUID", "--target", "/a b")): (
+                CommandResult(0, f"{UUID}\n", "")
+            )
+        }
+    )
+    check_target(remote_for(fake), "/a b")
+    assert len(fake.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        CommandResult(0, "11111111-0000-0000-0000-000000000000\n", ""),
+        CommandResult(0, "", ""),
+        CommandResult(1, "", "findmnt: oops"),
+        CommandResult(255, "", "Connection closed"),
+    ],
+)
+def test_check_target_refuses_anything_else(answer: CommandResult) -> None:
+    from storage_cleanup.actions.remote import check_target
+
+    fake = FakeSsh(
+        {("one.example", line("findmnt", "-no", "UUID", "--target", "/x")): answer}
+    )
+    with pytest.raises(RemoteError) as caught:
+        check_target(remote_for(fake), "/x")
+    assert caught.value.message == "The archive disk is not the expected one"

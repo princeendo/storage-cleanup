@@ -87,3 +87,14 @@ def test_bytes_needed(tmp_path: Path) -> None:
         " String(bytesNeeded(o, 'percent', 'x'))];",
     )
     assert got == [5 * GIB, 2 * GIB, -5 * GIB, "NaN"]
+
+
+def test_archive_queued_items_block_but_do_not_count(tmp_path: Path) -> None:
+    # "a" sits in the Archive queue: neither it nor its child is picked, and
+    # its 50 bytes do not count toward the goal of 12.
+    body = (
+        'return fill([C("a", "/h/a", 50), C("c", "/h/a/c", 6), C("p", "/h", 99),'
+        ' C("b", "/h/b", 6), C("d", "/h/d", 6), C("e", "/h/e", 6)], 12, [],'
+        ' [C("a", "/h/a", 50)]);'
+    )
+    assert ids(tmp_path, body) == ["b", "d"]

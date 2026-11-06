@@ -191,8 +191,12 @@ The batch's `README.md` on the homelab has a restore command for each item
   `mkdir -p`, `mv -n`, `chown`, `find` (only with `-exec chmod`), `rmdir`, one
   fixed listing script, and `rsync`.
 - It never removes anything on the homelab.
-- It always uses `IdentitiesOnly` and `BatchMode`, and stops on any host-key or
-  identity problem.
+- It always uses `IdentitiesOnly`, `BatchMode` and `StrictHostKeyChecking=yes`
+  (whatever `~/.ssh/config` says), and stops on any host-key or identity
+  problem. A stalled connection ends after about two minutes
+  (`ServerAliveInterval=30`, `ServerAliveCountMax=4`).
+- Right before an item goes to the Trash, it checks again that the folder
+  holding the copy is on the archive disk (`findmnt --target`).
 
 ## Reaching a free-space target
 

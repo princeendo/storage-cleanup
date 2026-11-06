@@ -336,3 +336,12 @@ def test_action_runner_never_reads_the_terminal(
     assert captured["stdin"] is subprocess.DEVNULL
     assert captured["start_new_session"] is True
     assert captured["timeout"] == 900
+
+
+def test_delete_results_have_no_notes(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    plan = build_plan(scan, "S.json", ids_for(scan, paths[:1]), permanent=False)
+    result = run_plan(
+        plan, scan, runner=MovingTrash(), brew_prefix=None, log_dir=tmp_path / "log"
+    )
+    assert result.notes == ()
