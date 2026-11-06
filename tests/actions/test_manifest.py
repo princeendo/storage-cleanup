@@ -225,3 +225,18 @@ def test_list_script_runs_under_posix_sh(tmp_path: Path) -> None:
     )
     remote = parse_listing(done.stdout)
     assert compare(local, remote) == []
+
+
+def test_snapshot_matches_the_hashing_walk_and_sees_changes(tmp_path: Path) -> None:
+    from storage_cleanup.actions.manifest import local_manifest_and_snapshot, snapshot
+
+    item = tmp_path / "item"
+    (item / "sub").mkdir(parents=True)
+    (item / "sub" / "f").write_bytes(b"abc")
+    (item / "link").symlink_to("sub/f")
+    manifest, seen = local_manifest_and_snapshot(item)
+    assert manifest == local_manifest(item)
+    assert set(seen) == {"item", "item/sub", "item/sub/f", "item/link"}
+    assert snapshot(item) == seen
+    (item / "sub" / "f").write_bytes(b"abd")
+    assert snapshot(item) != seen

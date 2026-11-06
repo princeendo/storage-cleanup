@@ -25,9 +25,10 @@ from storage_cleanup.actions.manifest import (
     UnsupportedItem,
     compare,
     list_command,
-    local_manifest,
+    local_manifest_and_snapshot,
     manifest_to_json,
     parse_listing,
+    snapshot,
 )
 from storage_cleanup.actions.model import ActionPlan, Method, PlanEntry, plan_id
 from storage_cleanup.actions.remote import (
@@ -60,6 +61,7 @@ DONE_DETAIL: Final = "Copied to the homelab, checked, and moved to the Trash."
 CONNECTION_LOST: Final = "Connection lost"
 NOT_IN_PLACE: Final = "Could not move it into place on the homelab; the copy is in {}"
 NO_SUCH_FILE: Final = "No such file or directory"
+CHANGED: Final = "Changed while archiving; the homelab copy is in {}"
 
 
 @dataclass(frozen=True)
@@ -139,7 +141,7 @@ def _archive_one(
     if copied.returncode != 0:
         return kept(f"The copy failed: {_error(copied)}", remote_failed=True)
     try:
-        local = local_manifest(Path(path))
+        local, seen = local_manifest_and_snapshot(Path(path))
     except (UnsupportedItem, OSError) as exc:
         return kept(str(exc), remote_failed=False)
     listing = remote.call(list_command(holder), timeout=ARCHIVE_TIMEOUT_SECONDS)
@@ -156,6 +158,23 @@ def _archive_one(
     if not _move_into_place(remote, incoming, final):
         return _Outcome("failed", NOT_IN_PLACE.format(incoming), remote_failed=True)
     remote.call(["rmdir", "--", holder])  # an empty folder left behind is harmless
+
+    # Hours may have passed since verify and the hashing: check everything again.
+    try:
+        check_storage(remote, 0)  # an unmounted disk means the copy is elsewhere
+    except RemoteError as exc:
+        detail = f"{exc.message[:DETAIL_LIMIT]}; the homelab copy is in {final}"
+        return _Outcome("failed", detail, remote_failed=True)
+    reason = verify_entry(entry, scan, brew_prefix=brew_prefix)
+    if reason is not None:
+        detail = f"{reason[:DETAIL_LIMIT].rstrip('.')}. The homelab copy is in {final}."
+        return _Outcome("skipped", detail, archived=(final, local))
+    try:
+        unchanged = snapshot(Path(path)) == seen
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        return _Outcome("failed", CHANGED.format(final), archived=(final, local))
     status, detail = trash_path(path, runner)
     if status == "done":
         return _Outcome("done", DONE_DETAIL, archived=(final, local))
@@ -358,6 +377,11 @@ def run_archive(
             if probe.returncode == CONNECTION_LOST_EXIT:
                 stop = CONNECTION_LOST
 
+    if remote is not None and batch is not None and stop != CONNECTION_LOST:
+        try:
+            check_storage(remote, 0)  # never write into an empty mountpoint
+        except RemoteError as exc:
+            stop = exc.message
     if remote is not None and batch is not None:
         manifest: dict[str, JsonValue] = {
             "batch": batch,
@@ -376,10 +400,10 @@ def run_archive(
         }
         manifest_dir.mkdir(parents=True, exist_ok=True)
         _write_log(manifest_dir / f"{batch_name}.json", manifest)
-        if stop == CONNECTION_LOST:
+        if stop is not None:
             notes.append(
-                "The connection was lost, so MANIFEST.json, README.md and the "
-                "batch's ownership were not finished on the homelab."
+                f"{stop}, so MANIFEST.json, README.md and the batch's ownership "
+                "were not finished on the homelab."
             )
         else:
             restores = [

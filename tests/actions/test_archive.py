@@ -186,11 +186,13 @@ def item_calls(n: int, path: Path) -> list[list[str]]:
         ["find", incoming, "-maxdepth", "0"],
         ["find", final, "-maxdepth", "0"],
         ["rmdir", "--", holder],
+        *guard(),  # the disk is still the archive disk right before the trash
     ]
 
 
 def finish_calls() -> list[list[str]]:
     return [
+        *guard(),  # never write the batch files into an empty mountpoint
         ["rsync", "MANIFEST.json", f"archiver@one.example:{BATCH}/"],
         ["rsync", "README.md", f"archiver@one.example:{BATCH}/"],
         ["chown", "-R", "--", "archiver:users", BATCH],
@@ -639,3 +641,86 @@ def test_no_location_skips_everything(tmp_path: Path) -> None:
     result = run(tmp_path, plan, scan, lab, MovingTrash())
     assert result.results[0].status == "skipped"
     assert lab.calls == []
+
+
+# --- Re-checks right before the trash -----------------------------------------
+
+
+def change_during_listing(lab: FakeLab, change: Callable[[], object]) -> None:
+    """The remote listing matches the copy; the local item changes meanwhile."""
+
+    def listing(argv: list[str]) -> CommandResult:
+        answer = ok(listing_of(lab.at(argv[4])))
+        change()
+        return answer
+
+    lab.on(["sh"], listing)
+
+
+def test_content_changed_after_hashing_is_not_trashed(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    change_during_listing(lab, lambda: paths[0].write_bytes(b"z" * 1000))
+    result = run(tmp_path, archive_plan(scan, paths[:1]), scan, lab, trash)
+    [entry] = result.results
+    assert entry.status == "failed"
+    assert entry.detail == (
+        f"Changed while archiving; the homelab copy is in {final_of(paths[0])}"
+    )
+    assert trash.calls == []
+    assert paths[0].read_bytes() == b"z" * 1000
+    assert result.archived_bytes == 0
+
+
+def test_file_added_after_hashing_is_not_trashed(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    folder = paths[2]
+    change_during_listing(lab, lambda: make_file(folder / "new.txt", 10))
+    result = run(tmp_path, archive_plan(scan, [folder]), scan, lab, trash)
+    [entry] = result.results
+    assert entry.status == "failed"
+    assert entry.detail.startswith("Changed while archiving")
+    assert trash.calls == []
+    assert (folder / "new.txt").exists()
+
+
+def test_protected_store_created_after_verify_is_not_trashed(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    folder = paths[2]
+    change_during_listing(lab, (folder / "Pics.photoslibrary").mkdir)
+    result = run(tmp_path, archive_plan(scan, [folder]), scan, lab, trash)
+    [entry] = result.results
+    assert entry.status != "done"
+    assert entry.detail.startswith("Protected: contains Photos library")
+    assert entry.detail.endswith(f"The homelab copy is in {final_of(folder)}.")
+    assert trash.calls == []
+    assert (folder / "c.mov").exists()
+
+
+def test_disk_unmounted_before_the_trash_is_not_trashed(tmp_path: Path) -> None:
+    _home, scan, paths = setup(tmp_path)
+    lab, trash = FakeLab(tmp_path / "lab"), MovingTrash()
+    checks = 0
+
+    def findmnt(argv: list[str]) -> CommandResult:
+        nonlocal checks
+        checks += 1  # 1: batch guard, 2: item guard, 3+: the re-checks
+        return ok(f"{UUID}\n") if checks <= 2 else ok("")
+
+    lab.on(["findmnt"], findmnt)
+    result = run(tmp_path, archive_plan(scan, paths[:1]), scan, lab, trash)
+    [entry] = result.results
+    assert entry.status == "failed"
+    assert entry.detail == (
+        f"The archive disk is not mounted; the homelab copy is in {final_of(paths[0])}"
+    )
+    assert trash.calls == []
+    assert paths[0].exists()
+    at = lab.calls.index(["rmdir", "--", f"{BATCH}/.incoming/1"])
+    assert lab.calls[at + 1][0] == "findmnt"
+    assert lab.calls[at + 2] == ["hostname"]  # the connection probe
+    # The batch files are not written into what may be an empty mountpoint.
+    assert not any(c[0] in ("chown", "rsync") for c in lab.calls[at:])
+    assert result.archived_bytes == 0

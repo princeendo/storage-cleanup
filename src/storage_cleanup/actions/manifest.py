@@ -53,14 +53,24 @@ def _hash_file(path: str) -> str:
     return digest.hexdigest()
 
 
+# relative path -> (size, mtime_ns, ctime_ns, inode), from lstat only.
+type Snapshot = dict[str, tuple[int, int, int, int]]
+
+
+def _fingerprint(info: os.stat_result) -> tuple[int, int, int, int]:
+    return (info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_ino)
+
+
 def _walk(
     path: str,
     rel: str,
     files: dict[str, tuple[int, str]],
     links: dict[str, str],
     dirs: set[str],
+    seen: Snapshot,
 ) -> None:
     info = os.lstat(path)
+    seen[rel] = _fingerprint(info)  # taken before hashing, so a change shows
     mode = info.st_mode
     if stat.S_ISLNK(mode):
         links[rel] = os.fsdecode(os.readlink(path))
@@ -77,18 +87,46 @@ def _walk(
                 files,
                 links,
                 dirs,
+                seen,
             )
     else:
         raise UnsupportedItem(f"{rel} is not a regular file, folder or link")
 
 
-def local_manifest(path: Path) -> Manifest:
-    """Walk an item on this Mac without following links, hashing its files."""
+def local_manifest_and_snapshot(path: Path) -> tuple[Manifest, Snapshot]:
+    """Walk an item on this Mac without following links, hashing its files.
+
+    The snapshot holds what lstat said about every path in the same walk, so a
+    later `snapshot(path)` shows whether anything changed since the hashing.
+    """
     files: dict[str, tuple[int, str]] = {}
     links: dict[str, str] = {}
     dirs: set[str] = set()
-    _walk(os.fspath(path), os.fsdecode(path.name), files, links, dirs)
-    return Manifest(files, links, frozenset(dirs))
+    seen: Snapshot = {}
+    _walk(os.fspath(path), os.fsdecode(path.name), files, links, dirs, seen)
+    return Manifest(files, links, frozenset(dirs)), seen
+
+
+def local_manifest(path: Path) -> Manifest:
+    """Walk an item on this Mac without following links, hashing its files."""
+    return local_manifest_and_snapshot(path)[0]
+
+
+def _snap(path: str, rel: str, seen: Snapshot) -> None:
+    info = os.lstat(path)
+    seen[rel] = _fingerprint(info)
+    if stat.S_ISDIR(info.st_mode):
+        with os.scandir(path) as entries:
+            names = sorted(entry.name for entry in entries)
+        for name in names:
+            _snap(os.path.join(path, name), f"{rel}/{os.fsdecode(name)}", seen)
+
+
+def snapshot(path: Path) -> Snapshot:
+    """lstat every path in the item again, without hashing or following links."""
+    seen: Snapshot = {}
+    _snap(os.fspath(path), os.fsdecode(path.name), seen)
+    return seen
 
 
 def parse_listing(data: str) -> Manifest:
