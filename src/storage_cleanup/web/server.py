@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from storage_cleanup.actions.archive import run_archive
 from storage_cleanup.actions.archive_config import (
     DEFAULT_CONFIG_PATH,
     ArchiveConfig,
@@ -345,11 +346,12 @@ class _Handler(BaseHTTPRequestHandler):
         if body.get("plan_id") != plan_id(plan):
             self._json(HTTPStatus.CONFLICT, "The plan changed; review it again.")
             return
-        if any(e.method == Method.ARCHIVE for e in plan.entries):
-            # Task 4 replaces this line with the real archive run.
-            self._json(
-                HTTPStatus.NOT_IMPLEMENTED, "Archive runs arrive in the next task."
-            )
+        config = self.app.archive_config
+        archiving = plan.location is not None or any(
+            e.method == Method.ARCHIVE for e in plan.entries
+        )
+        if archiving and config is None:
+            self._json(HTTPStatus.BAD_REQUEST, ARCHIVE_NOT_SET_UP)
             return
         if plan.permanent and body.get("confirm") != PERMANENT_PHRASE:
             self._json(
@@ -362,13 +364,26 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             scan = _read_scan(self.app.scan_path)
-            result = run_plan(
-                plan,
-                scan,
-                runner=self.app.runner,
-                brew_prefix=self.app.brew_prefix,
-                log_dir=action_log_dir(self.app.scan_path),
-            )
+            if archiving:
+                assert config is not None
+                result = run_archive(
+                    plan,
+                    scan,
+                    config=config,
+                    remote_runner=self.app.remote_runner,
+                    runner=self.app.runner,
+                    brew_prefix=self.app.brew_prefix,
+                    log_dir=action_log_dir(self.app.scan_path),
+                    manifest_dir=archive_manifest_dir(self.app.scan_path),
+                )
+            else:
+                result = run_plan(
+                    plan,
+                    scan,
+                    runner=self.app.runner,
+                    brew_prefix=self.app.brew_prefix,
+                    log_dir=action_log_dir(self.app.scan_path),
+                )
         except Exception as exc:  # the page must always get an answer
             self._json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -459,6 +474,11 @@ def action_log_dir(scan_path: Path) -> Path:
     if scan_path.parent.name == "scans":
         return scan_path.parent.parent / "actions"
     return scan_path.parent / "actions"
+
+
+def archive_manifest_dir(scan_path: Path) -> Path:
+    """Archive manifests sit beside the action logs (reports/archives)."""
+    return action_log_dir(scan_path).parent / "archives"
 
 
 def detect_brew_prefix() -> Path | None:

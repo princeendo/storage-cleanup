@@ -8,7 +8,7 @@ import stat
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -106,8 +106,12 @@ def _stamp(t: float) -> str:
     return datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _plain_failure(result: CommandResult) -> str:
+    return result.stderr.strip() or f"exited {result.returncode}"
+
+
 def _command_failure(result: CommandResult, entry: PlanEntry) -> str:
-    error = result.stderr.strip() or f"exited {result.returncode}"
+    error = _plain_failure(result)
     if any(hint in error for hint in _SUDO_HINTS):
         flag = "--cask " if entry.method == Method.BREW_CASK else ""
         return (
@@ -117,25 +121,37 @@ def _command_failure(result: CommandResult, entry: PlanEntry) -> str:
     return error
 
 
+def trash_path(
+    path: str,
+    runner: Runner,
+    describe_failure: Callable[[CommandResult], str] = _plain_failure,
+) -> tuple[str, str]:
+    """Recheck, move to the Trash, and confirm it is gone; return (status, detail)."""
+    reason = recheck_path(path)  # nothing may have changed since verify
+    if reason is not None:
+        return "skipped", reason
+    result = runner([TRASH_COMMAND, path])
+    if result.returncode != 0:
+        return "failed", describe_failure(result)
+    if not _gone(path):
+        return "failed", "The trash command finished but the item is still there."
+    return "done", "Moved to the Trash."
+
+
 def _execute(
     entry: PlanEntry, scan: Scan, runner: Runner, brew_prefix: Path | None
 ) -> tuple[str, str]:
     """Run one entry; return (status, detail)."""
-    if entry.method in (Method.TRASH, Method.DELETE):
+    if entry.method == Method.TRASH:
+        assert entry.path is not None
+        return trash_path(
+            entry.path, runner, lambda result: _command_failure(result, entry)
+        )
+    if entry.method == Method.DELETE:
         assert entry.path is not None
         reason = recheck_path(entry.path)  # nothing may have changed since verify
         if reason is not None:
             return "skipped", reason
-        if entry.method == Method.TRASH:
-            result = runner([TRASH_COMMAND, entry.path])
-            if result.returncode != 0:
-                return "failed", _command_failure(result, entry)
-            if not _gone(entry.path):
-                return (
-                    "failed",
-                    "The trash command finished but the item is still there.",
-                )
-            return "done", "Moved to the Trash."
         try:
             delete_path(Path(entry.path))
         except OSError as exc:
@@ -178,7 +194,7 @@ def _log_path(log_dir: Path, started: float) -> Path:
     return target
 
 
-def _write_log(target: Path, body: dict[str, object]) -> None:
+def _write_log(target: Path, body: Mapping[str, object]) -> None:
     fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".log-", suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(body, f, indent=1, ensure_ascii=True, default=str)
