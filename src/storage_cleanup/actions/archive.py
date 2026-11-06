@@ -199,15 +199,16 @@ def _readme(
         "",
         "## Restore",
         "",
-        "Run on the Mac to copy an item back:",
+        "Run on the Mac to copy an item back.",
+        "File modes and modification times are not restored.",
         "",
     ]
-    ssh = f'-e "ssh -i {config.key}"'
+    ssh = f'-e "ssh -o IdentitiesOnly=yes -i {shlex.quote(str(config.key))}"'
     for final, original in restores:
         source = f"{config.user}@{remote.host}:{shlex.quote(final)}"
         parent = shlex.quote(posixpath.dirname(original) + "/")
         lines.append(
-            f'    rsync -a --rsync-path="sudo -n rsync" {ssh} {source} {parent}'
+            f'    rsync -rl --rsync-path="sudo -n rsync" {ssh} {source} {parent}'
         )
     return "\n".join(lines) + "\n"
 

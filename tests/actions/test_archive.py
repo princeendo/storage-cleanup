@@ -326,10 +326,12 @@ def test_log_and_manifest_are_written(tmp_path: Path) -> None:
     readme = lab.uploaded["README.md"]
     parent = shlex.quote(str(paths[0].parent) + "/")
     assert (
-        'rsync -a --rsync-path="sudo -n rsync" -e "ssh -i /keys/k" '
+        'rsync -rl --rsync-path="sudo -n rsync" '
+        '-e "ssh -o IdentitiesOnly=yes -i /keys/k" '
         f"archiver@one.example:{shlex.quote(final_of(paths[0]))} {parent}"
     ) in readme
     assert "extended attributes" in readme and "Finder tags" in readme
+    assert "File modes and modification times are not restored." in readme
 
 
 def test_readme_quotes_awkward_names(tmp_path: Path) -> None:

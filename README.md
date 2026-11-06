@@ -169,7 +169,8 @@ moves the local item to the Trash. It is optional and off until you set it up.
 
 ### Restoring
 
-The batch's `README.md` on the homelab has a restore command for each item.
+The batch's `README.md` on the homelab has a restore command for each item
+(`rsync -rl`). File modes and modification times are not restored.
 `MANIFEST.json` lists every file with its size and SHA-256; a copy is kept in
 `reports/archives/`.
 

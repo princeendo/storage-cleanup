@@ -76,10 +76,11 @@ the approved design (`docs/superpowers/specs/2026-11-05-storage-explorer-design.
      (a folder containing `.git`) may be archived or trashed as one unit; the
      review warns when it has uncommitted or unpushed work.
    - Docker volumes are report-only.
-8. **No elevated rights.** Do not use `sudo` or ask for Full Disk Access. If a
-   path needs either, report it and skip it. Empty Trash goes through Finder
-   and may show a one-time macOS Automation prompt; the tool never changes
-   that setting itself.
+8. **No elevated rights on this Mac.** The tool never uses `sudo` on this Mac
+   and never asks for Full Disk Access. If a path needs either, report it and
+   skip it. On the homelab, Archive uses `sudo -n` as described in rule 3.
+   Empty Trash goes through Finder and may show a one-time macOS Automation
+   prompt; the tool never changes that setting itself.
 9. **Local server safety.** The page listens only on `127.0.0.1`, needs the
    per-session token, rejects foreign `Host` headers, and accepts changes only
    as JSON `POST` requests with a matching `Origin`. One run at a time.
