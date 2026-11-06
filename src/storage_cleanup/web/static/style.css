@@ -446,3 +446,27 @@ dialog.action-dialog h4 { margin: 16px 0 4px; font-size: 14px; color: var(--ink-
 .target-tip strong { color: var(--ink); font-size: 13px; }
 @media (forced-colors: active) { .target-seg { border: 1px solid CanvasText; } }
 .target-tip[hidden] { display: none; }
+
+/* What grew since last time */
+.growth-head { margin: 4px 0 8px; font-size: 14px; color: var(--ink-2); }
+.growth-head strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.growth-spark { width: 100%; height: 72px; margin-bottom: 8px; }
+.growth-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.growth-list h3 { margin: 0 0 4px; font-size: 14px; font-weight: 620; }
+.growth-none { margin: 8px 0; font-size: 13px; color: var(--ink-muted); }
+.growth-row {
+  appearance: none; display: flex; justify-content: space-between; gap: 12px; width: 100%;
+  text-align: left; font: inherit; color: var(--ink); background: none; border: 0;
+  border-top: 1px solid var(--hairline); padding: 10px 4px; cursor: pointer;
+}
+.growth-row:hover, .growth-row:focus-visible { background: var(--wash); }
+.growth-main { min-width: 0; flex: 1; }
+.growth-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.growth-tag {
+  margin-left: 8px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  color: var(--ink-2); background: var(--wash); box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.growth-row .path { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--ink-muted); word-break: break-all; }
+.growth-numbers { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.growth-change { font-size: 14px; font-weight: 600; }
+.growth-span { font-size: 12px; color: var(--ink-muted); }

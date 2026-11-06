@@ -1,6 +1,7 @@
 import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
 import * as queue from "./queue.js";
 import { renderDeleteTab } from "./delete.js";
+import { renderGrowth } from "./growth.js";
 import { renderProjects } from "./projects.js";
 import { renderRecommendations } from "./recommendations.js";
 import { renderScatter } from "./scatter.js";
@@ -236,6 +237,12 @@ function scatterSection(view, onSelect) {
   draw();
 }
 
+function growthSection(view, onSelect) {
+  const draw = () => renderGrowth($("growth-body"), view, onSelect);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  draw();
+}
+
 function projectsSection(view, onSelect) {
   renderProjects($("projects-body"), view, onSelect);
 }
@@ -254,6 +261,7 @@ function deleteSection(view) {
 
 const sections = [
   findingsSection,
+  growthSection,
   treemapSection,
   scatterSection,
   projectsSection,
