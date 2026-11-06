@@ -1,7 +1,10 @@
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+
+import pytest
 
 from storage_cleanup.scan import model
 from storage_cleanup.scan.model import Item, Scan, scan_to_json
@@ -200,3 +203,31 @@ def test_history_cache_is_capped(tmp_path: Path) -> None:
     ]
     history(paths)
     assert len(growth_module._CACHE) <= 2 * HISTORY_LIMIT
+
+
+def test_history_cache_is_thread_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    growth_module._CACHE.clear()
+    monkeypatch.setattr(growth_module, "HISTORY_LIMIT", 4)
+    paths = [
+        write(tmp_path, f"{i:03d}.json", "2026-01-01T00:00:00Z", i) for i in range(40)
+    ]
+    errors: list[BaseException] = []
+    results: list[list[int]] = []
+
+    def work() -> None:
+        try:
+            for _ in range(20):
+                results.append([r["used_bytes"] for r in history(paths)])  # type: ignore[misc]
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert all(r == [36, 37, 38, 39] for r in results)
+    assert len(growth_module._CACHE) <= 8

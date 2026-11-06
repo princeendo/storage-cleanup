@@ -1,5 +1,6 @@
 """What changed since the previous scan, and the used-space history."""
 
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
@@ -13,6 +14,7 @@ HISTORY_LIMIT: Final = 60
 EXPLAINED_FRACTION: Final = 0.8
 
 _CACHE: dict[tuple[str, int, int], dict[str, JsonValue] | None] = {}
+_CACHE_LOCK: Final = threading.Lock()  # the page server handles requests in threads
 
 
 def _path_items(scan: Scan) -> dict[str, Item]:
@@ -87,8 +89,9 @@ def _summary(path: Path) -> dict[str, JsonValue] | None:
         key = (str(path), stat.st_mtime_ns, stat.st_size)
     except OSError:
         return None
-    if key in _CACHE:
-        return _CACHE[key]
+    with _CACHE_LOCK:
+        if key in _CACHE:
+            return _CACHE[key]
     try:
         scan = scan_from_json(path.read_text(encoding="utf-8"))
         entry: dict[str, JsonValue] | None = {
@@ -98,9 +101,10 @@ def _summary(path: Path) -> dict[str, JsonValue] | None:
         }
     except Exception:  # an unreadable scan is simply left out of the history
         entry = None
-    if len(_CACHE) >= 2 * HISTORY_LIMIT:
-        del _CACHE[next(iter(_CACHE))]
-    _CACHE[key] = entry
+    with _CACHE_LOCK:
+        while len(_CACHE) >= 2 * HISTORY_LIMIT:
+            del _CACHE[next(iter(_CACHE))]
+        _CACHE[key] = entry
     return entry
 
 
