@@ -386,3 +386,6 @@ aside#detail .item-name { font-weight: 600; }
 .chip.delete::before { background: var(--series-2); }
 .chip.archive::before { background: var(--series-1); }
 .badge.source-agent { color: var(--ink); }
+.check-cell { width: 28px; }
+.check-cell input { width: 16px; height: 16px; accent-color: var(--accent); }
+aside#detail .queue-button { margin-top: 16px; }

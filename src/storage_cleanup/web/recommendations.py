@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from typing import Final
 
+from storage_cleanup.actions.plan import removal_method
 from storage_cleanup.scan.model import Item, JsonValue, Scan
 from storage_cleanup.scan.recommend import Recommendation, score
 from storage_cleanup.web.views import category_groups
@@ -95,6 +96,7 @@ def recommendation_rows(
             "rule": rec.rule,
             "score": score(rec.confidence, item.size_bytes),
             "protected": False,
+            "removable": removal_method(item, permanent=False) is not None,
         }
 
     top: list[Row] = []
@@ -153,6 +155,7 @@ def recommendation_rows(
                 "rule": rule,
                 "score": score(confidence, size),
                 "protected": False,
+                "removable": any(r["removable"] for r in group),
                 "children": members,
             }
         )

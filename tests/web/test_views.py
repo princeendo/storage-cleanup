@@ -391,3 +391,12 @@ def test_parent_cycles_do_not_crash() -> None:
     tree = category_tree(scan)
     assert all(n.value >= 0 for n in all_nodes(tree))
     assert build_view(scan, NOW)["schema"] == 1
+
+
+def test_tree_nodes_carry_protection() -> None:
+    mail = path_item("/h/Library/Mail", 50)
+    tree = category_tree(scan_of([LIB, mail]), small_min_bytes=0)
+    assert find(tree, LIB.id).protected is True  # contains Mail
+    assert find(tree, LIB.id).to_json()["protected"] is True
+    movies = path_item("/h/Movies", 10)
+    assert find(category_tree(scan_of([movies])), movies.id).protected is False

@@ -25,6 +25,7 @@ function toData(node, lens, group, used) {
     id: node.id,
     path: node.path,
     kind: node.kind,
+    protected: node.protected,
     group: top,
     share: used ? node.value / used : 0,
     itemStyle: { color: fillFor(lens, top) },
@@ -58,6 +59,8 @@ export function renderTreemap(el, view, lens, onSelect) {
     const d = params.data;
     if (!d || d.children) return;
     onSelect({
+      item_id: d.kind === "item" ? d.id : undefined,
+      protected: d.protected,
       name: d.name,
       path: d.path,
       value: d.value,
