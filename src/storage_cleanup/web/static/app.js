@@ -1,5 +1,6 @@
 import { describeAge, formatAge, formatBytes, formatDate } from "./format.js";
 import * as queue from "./queue.js";
+import { renderDeleteTab } from "./delete.js";
 import { renderProjects } from "./projects.js";
 import { renderRecommendations } from "./recommendations.js";
 import { renderScatter } from "./scatter.js";
@@ -242,7 +243,18 @@ function recommendationsSection(view, onSelect) {
   renderRecommendations($("recs-body"), view, onSelect);
 }
 
-const sections = [findingsSection, treemapSection, scatterSection, projectsSection, recommendationsSection];
+function deleteSection(view) {
+  renderDeleteTab($("delete-body"), view);
+}
+
+const sections = [
+  findingsSection,
+  treemapSection,
+  scatterSection,
+  projectsSection,
+  recommendationsSection,
+  deleteSection,
+];
 
 async function main() {
   for (const button of document.querySelectorAll("nav.tabs [data-tab]")) {
